@@ -11,16 +11,18 @@
  * operands, constant symbol-offset memory operands, signed and unsigned PTR
  * width overrides, register-indirect memory operands, TYPE, LENGTHOF, SIZEOF,
  * packed character literals, implemented instruction groups, INCLUDELIB
- * diagnostics, Phase 82 zero-argument INVOKE lowering, targeted INVOKE
- * diagnostics for unsupported arguments and non-goal targets, high-level-flow
- * diagnostics, explicit unsupported-feature diagnostics, safe recovery for
- * recognized MASM textbook constructs, specific surfaced lexer diagnostics,
- * virtual Irvine32 registry metadata, Phase 68 call-target classification
- * metadata used by Phase 69 direct user-procedure CALL lowering, Phase 70
- * plain near RET lowering, Phase 74 RET imm16 lowering, Phase 75
- * PROC metadata diagnostics, Phase 76 PROC USES parsing metadata, Phase 78
- * LOCAL declaration parser metadata, and Phase 78A limited OPTION NOKEYWORD
- * parser keyword opt-out metadata, and Phase 81 PROTO declaration metadata.
+ * diagnostics, Phase 82 zero-argument INVOKE lowering, Phase 83 helper-level
+ * ADDR records, Phase 84 limited INVOKE DWORD argument lowering, targeted
+ * INVOKE diagnostics for unsupported arguments and non-goal targets,
+ * high-level-flow diagnostics, explicit unsupported-feature diagnostics, safe
+ * recovery for recognized MASM textbook constructs, specific surfaced lexer
+ * diagnostics, virtual Irvine32 registry metadata, Phase 68 call-target
+ * classification metadata used by Phase 69 direct user-procedure CALL
+ * lowering, Phase 70 plain near RET lowering, Phase 74 RET imm16 lowering,
+ * Phase 75 PROC metadata diagnostics, Phase 76 PROC USES parsing metadata,
+ * Phase 78 LOCAL declaration parser metadata, Phase 78A limited OPTION
+ * NOKEYWORD parser keyword opt-out metadata, and Phase 81 PROTO declaration
+ * metadata.
  */
 
 #ifndef MASM32_SIM_PARSER_H
@@ -181,7 +183,7 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY,
     /// Legacy diagnostic for pre-Phase 82 blanket INVOKE rejections retained for stable code-name mapping.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE,
-    /// An ADDR argument was used before procedure-argument lowering exists.
+    /// Legacy blanket ADDR rejection retained for stable code-name mapping before targeted ADDR diagnostics.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR,
     /// Legacy diagnostic for external routine syntax outside executable simulator scope.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_ROUTINE,
@@ -311,17 +313,23 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_PROTO_PROC_MISMATCH,
     /// An INVOKE target was missing, malformed, unknown, or not a user procedure.
     VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET,
-    /// An INVOKE line supplied arguments before argument lowering is implemented.
+    /// Legacy blanket INVOKE-argument rejection retained for stable code-name mapping before Phase 84 targeted argument diagnostics.
     VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENTS_NOT_SUPPORTED_YET,
     /// A zero-argument INVOKE targeted metadata that requires one or more arguments.
     VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENT_COUNT_MISMATCH,
+    /// An INVOKE argument used syntax outside the Phase 84 DWORD argument subset.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE_ARGUMENT,
+    /// An INVOKE argument used a supported category with a non-DWORD executable width.
+    VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENT_WIDTH_UNSUPPORTED,
+    /// INVOKE argument lowering could not prove exact stdcall-style callee cleanup.
+    VM_PARSER_DIAGNOSTIC_INVOKE_CLEANUP_MISMATCH,
     /// An INVOKE target names external/API/runtime behavior outside simulator scope.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_INVOKE,
     /// An INVOKE target names a recognized Irvine32 routine not callable through INVOKE yet.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE_INVOKE,
     /// A helper-level ADDR argument target used a non-addressable form.
     VM_PARSER_DIAGNOSTIC_INVALID_ADDR_TARGET,
-    /// ADDR appeared outside the future INVOKE-argument helper context.
+    /// ADDR appeared outside accepted INVOKE-argument handling.
     VM_PARSER_DIAGNOSTIC_ADDR_OUTSIDE_INVOKE,
     /// A helper-level ADDR argument named no known addressable symbol.
     VM_PARSER_DIAGNOSTIC_UNKNOWN_ADDR_SYMBOL,
@@ -512,6 +520,16 @@ typedef struct VmProcedureRange {
     uint32_t local_frame_size_bytes;
     /// Parser-owned Phase 78 LOCAL metadata slots in declaration order.
     VmProcedureLocalSymbol locals[VM_PROCEDURE_LOCAL_CAPACITY];
+    /// Number of RET instructions parsed inside this procedure body.
+    size_t ret_instruction_count;
+    /// Whether any RET inside this procedure omitted an imm16 cleanup operand.
+    bool has_plain_ret;
+    /// Whether any RET imm16 inside this procedure declared cleanup metadata.
+    bool has_ret_imm16_cleanup;
+    /// Whether all parsed RET imm16 cleanup operands agree with @ref ret_cleanup_bytes.
+    bool has_consistent_ret_cleanup;
+    /// Common RET imm16 cleanup byte count when @ref has_consistent_ret_cleanup is true.
+    uint32_t ret_cleanup_bytes;
 } VmProcedureRange;
 
 /// Describes one accepted numeric equate declaration published for metadata consumers.
@@ -528,7 +546,7 @@ typedef struct VmNumericEquate {
     size_t source_span_length;
 } VmNumericEquate;
 
-/// Supplies metadata for Phase 83 helper-level ADDR argument record construction.
+/// Supplies metadata for ADDR argument record construction used by INVOKE argument handling.
 typedef struct VmParserAddrArgumentContext {
     /// Accepted data, .DATA?, and .CONST symbol table.
     const VmSymbol *symbols;
@@ -544,11 +562,11 @@ typedef struct VmParserAddrArgumentContext {
     uint32_t active_local_frame_base_address;
     /// Whether LOCAL symbols in @ref active_procedure may resolve to runtime frame-relative addresses.
     bool has_active_local_frame;
-    /// User-symbol CASEMAP policy active at the future INVOKE-argument reference.
+    /// User-symbol CASEMAP policy active at the INVOKE-argument reference.
     VmSymbolCasePolicy case_policy;
 } VmParserAddrArgumentContext;
 
-/// Describes one Phase 83 helper-level address-valued future INVOKE argument.
+/// Describes one helper-level address-valued INVOKE argument.
 typedef struct VmParserAddrArgumentRecord {
     /// Computed 32-bit address value for the symbol or active-frame LOCAL.
     uint32_t address;
@@ -652,7 +670,7 @@ const char *vm_parser_call_target_class_name(VmParserCallTargetClass target_clas
 
 /// Classifies an identifier-shaped CALL/INVOKE target by parser metadata.
 ///
-/// The helper performs no lowering or execution. Direct CALL and future INVOKE
+/// The helper performs no lowering or execution. Direct CALL and INVOKE
 /// parser phases use it to distinguish user procedures, ordinary labels, data
 /// symbols, numeric equates, Irvine32 registry names, external non-goals,
 /// reserved words, malformed operands, and unknown symbols before committing
@@ -720,11 +738,11 @@ typedef struct VmParserDiagnostic {
     char message_storage[VM_PARSER_DIAGNOSTIC_MESSAGE_CAPACITY];
 } VmParserDiagnostic;
 
-/// Builds one Phase 83 helper-level ADDR argument record without executing INVOKE.
+/// Builds one helper-level ADDR argument record for INVOKE argument handling.
 ///
-/// The helper accepts only the future INVOKE-argument form `ADDR symbol` from a
-/// caller-controlled helper path. Complete source-level INVOKE argument
-/// execution remains unsupported. On failure, @p out_diagnostic receives one
+/// The helper accepts only the INVOKE-argument form `ADDR symbol` from a
+/// caller-controlled helper path. Phase 84 source-level INVOKE argument
+/// execution uses only the accepted limited DWORD subset; unsupported forms remain rejected. On failure, @p out_diagnostic receives one
 /// targeted parser diagnostic when supplied.
 ///
 /// @param context Metadata tables and optional active LOCAL frame context.

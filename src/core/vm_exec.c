@@ -16,7 +16,7 @@
  * last-step deltas by snapshotting CPU state and copying memory-module byte
  * changes after each successful step. Phase 68A initializes ESP from the active
  * stack region at startup; source-level PUSH/POP, LEAVE, and RET imm16 cleanup are supported,
- * and Phase 77 saves and restores PROC USES registers on supported direct CALL/RET paths. Phase 79 creates automatic LOCAL frames for selected-entry and direct-CALL procedure paths, and Phase 80 resolves supported source-level LOCAL operands through active frame-relative storage. ENTER, ADDR/INVOKE local argument lowering, far returns, and non-exit
+ * and Phase 77 saves and restores PROC USES registers on supported direct CALL/RET paths. Phase 79 creates automatic LOCAL frames for selected-entry and direct-CALL procedure paths, and Phase 80 resolves supported source-level LOCAL operands through active frame-relative storage. Phase 84 captures and commits accepted same-file user-procedure INVOKE DWORD arguments, including ADDR active-LOCAL arguments. ENTER, far returns, general source-level ADDR outside accepted INVOKE arguments, and non-exit
  * Irvine32 routines remain later milestones. Phase 69
  * implements direct user-procedure CALL as a checked internal stack write,
  * Phase 70 implements helper RET as a checked internal stack read, and Phase 71
@@ -33,6 +33,17 @@
 
 /// Number of source-visible canonical registers captured for register deltas.
 #define VM_EXEC_CANONICAL_DELTA_REGISTER_COUNT 8U
+
+/// Validates a direct-CALL-style branch target before stack mutation.
+static VmExecStatus vm_exec_validate_call_target(const Vm *vm, const VmIrInstruction *instruction);
+
+/// Writes the internal direct-CALL return token, USES saves, and LOCAL frame.
+static VmExecStatus vm_exec_write_call_and_uses_frame(
+    Vm *vm,
+    const VmIrInstruction *instruction,
+    uint32_t return_token,
+    const VmExecProcedureBoundary *target_boundary
+);
 
 /// Canonical source-visible registers captured for register deltas.
 static const VmRegister VM_EXEC_CANONICAL_DELTA_REGISTERS[VM_EXEC_CANONICAL_DELTA_REGISTER_COUNT] = {
@@ -1710,6 +1721,190 @@ static VmExecStatus vm_exec_execute_push(Vm *vm, const VmIrInstruction *instruct
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
 
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Resolves a Phase 84 address-valued INVOKE argument without dereferencing it.
+///
+/// @param vm VM instance containing the active caller frame.
+/// @param instruction Capture instruction associated with diagnostics.
+/// @param operand Address-valued operand to resolve.
+/// @param out_value Receives the 32-bit address value.
+/// @return OK when the address was resolved, otherwise a targeted executor status.
+static VmExecStatus vm_exec_resolve_invoke_address_argument(
+    Vm *vm,
+    const VmIrInstruction *instruction,
+    const VmIrOperand *operand,
+    uint32_t *out_value
+) {
+    if (vm == NULL || instruction == NULL || operand == NULL || out_value == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    if (operand->kind == VM_IR_OPERAND_IMMEDIATE && operand->relocation == VM_IR_RELOCATION_LOCAL) {
+        VmIrOperand local_operand = vm_ir_operand_local_memory((int32_t)operand->address, 0, 32U);
+        return vm_exec_resolve_local_memory_address(vm, instruction, &local_operand, out_value);
+    }
+
+    if (operand->kind == VM_IR_OPERAND_IMMEDIATE &&
+        (operand->relocation == VM_IR_RELOCATION_DATA || operand->relocation == VM_IR_RELOCATION_CONST)) {
+        *out_value = operand->immediate;
+        return VM_EXEC_STATUS_OK;
+    }
+
+    return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+}
+
+/// Captures one Phase 84 INVOKE DWORD argument before stack mutation begins.
+///
+/// Register and memory arguments are read through the ordinary checked operand
+/// path; address-valued ADDR/OFFSET arguments compute an address and do not read
+/// pointed-to bytes. The destination immediate selects the pending-argument
+/// slot in source order.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction INVOKE capture instruction descriptor.
+/// @return Executor status for the capture.
+static VmExecStatus vm_exec_execute_invoke_capture_dword(Vm *vm, const VmIrInstruction *instruction) {
+    uint32_t index = 0U;
+    uint32_t value = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL || instruction->destination.kind != VM_IR_OPERAND_IMMEDIATE) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    index = instruction->destination.immediate;
+    if (index >= (uint32_t)VM_EXEC_INVOKE_ARGUMENT_CAPACITY) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    if (instruction->source.kind == VM_IR_OPERAND_IMMEDIATE && instruction->source.relocation != VM_IR_RELOCATION_NONE) {
+        status = vm_exec_resolve_invoke_address_argument(vm, instruction, &instruction->source, &value);
+    } else {
+        status = vm_exec_read_operand(vm, instruction, &instruction->source, 32U, &value);
+    }
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    vm->pending_invoke_arguments[index] = value;
+    vm->pending_invoke_argument_valid[index] = true;
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Clears all pending Phase 84 INVOKE argument capture slots.
+///
+/// @param vm VM instance to mutate. NULL is ignored.
+static void vm_exec_clear_pending_invoke_arguments(Vm *vm) {
+    if (vm == NULL) {
+        return;
+    }
+    memset(vm->pending_invoke_arguments, 0, sizeof(vm->pending_invoke_arguments));
+    memset(vm->pending_invoke_argument_valid, 0, sizeof(vm->pending_invoke_argument_valid));
+}
+
+/// Executes one Phase 84 INVOKE commit after every argument has been captured.
+///
+/// The commit preflights the complete argument-plus-CALL stack footprint, then
+/// writes captured DWORD arguments right-to-left through checked memory helpers
+/// before using the ordinary direct-CALL entry path for the return token,
+/// PROC USES saves, and automatic LOCAL frame setup.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction INVOKE commit instruction descriptor.
+/// @return Executor status for argument stack writes and CALL entry.
+static VmExecStatus vm_exec_execute_invoke_commit(Vm *vm, const VmIrInstruction *instruction) {
+    const VmExecProcedureBoundary *target_boundary = NULL;
+    uint32_t arg_count = 0U;
+    uint32_t arg_bytes = 0U;
+    uint32_t call_bytes = 0U;
+    uint32_t total_bytes = 0U;
+    uint32_t esp = 0U;
+    uint32_t current_esp = 0U;
+    uint32_t current_depth = 0U;
+    uint32_t attempted_depth = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+    size_t reverse_index = 0U;
+    uint32_t return_token = 0U;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    status = vm_exec_validate_call_target(vm, instruction);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+    if (instruction->source.kind != VM_IR_OPERAND_BRANCH_TARGET) {
+        return VM_EXEC_STATUS_INVALID_CALL_TARGET;
+    }
+    arg_count = (uint32_t)instruction->source.width_bits;
+    if (arg_count == 0U || arg_count > (uint32_t)VM_EXEC_INVOKE_ARGUMENT_CAPACITY) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    for (reverse_index = 0U; reverse_index < (size_t)arg_count; reverse_index += 1U) {
+        if (!vm->pending_invoke_argument_valid[reverse_index]) {
+            return VM_EXEC_STATUS_INVALID_ARGUMENT;
+        }
+    }
+
+    target_boundary = vm_exec_find_procedure_boundary_starting_at(vm, (size_t)instruction->destination.immediate);
+    if (target_boundary != NULL && vm_exec_procedure_boundary_has_locals(target_boundary) &&
+        (vm->active_local_frame_count >= (size_t)VM_MAX_CALL_DEPTH_LIMIT || !vm_exec_can_create_local_descriptors(vm, target_boundary))) {
+        vm_exec_set_local_frame_diagnostic(vm, VM_EXEC_STATUS_INVALID_FRAME_STATE, instruction, target_boundary,
+            "local-descriptor-capacity", target_boundary->local_frame_size_bytes, 0U, false);
+        return VM_EXEC_STATUS_INVALID_FRAME_STATE;
+    }
+    current_depth = vm->current_call_depth > (size_t)UINT32_MAX ? UINT32_MAX : (uint32_t)vm->current_call_depth;
+    attempted_depth = current_depth == UINT32_MAX ? UINT32_MAX : current_depth + 1U;
+    if (attempted_depth > vm->call_depth_limit) {
+        vm_exec_set_call_depth_diagnostic(vm, instruction, current_depth, attempted_depth, vm->call_depth_limit);
+        return VM_EXEC_STATUS_CALL_DEPTH_EXCEEDED;
+    }
+    if (!vm_exec_instruction_index_to_pseudo_eip((size_t)instruction->source.immediate, &return_token)) {
+        return VM_EXEC_STATUS_INVALID_CALL_TARGET;
+    }
+    if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_ESP, &esp)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (arg_count > UINT32_MAX / 4U) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    arg_bytes = arg_count * 4U;
+    call_bytes = vm_exec_direct_call_combined_footprint(target_boundary);
+    if (call_bytes == 0U || arg_bytes > UINT32_MAX - call_bytes) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    total_bytes = arg_bytes + call_bytes;
+    if (!vm_exec_stack_can_reserve_bytes(vm, esp, total_bytes)) {
+        vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_STACK_OVERFLOW, instruction);
+        return VM_EXEC_STATUS_STACK_OVERFLOW;
+    }
+
+    current_esp = esp;
+    for (reverse_index = 0U; reverse_index < (size_t)arg_count; reverse_index += 1U) {
+        size_t source_index = (size_t)arg_count - 1U - reverse_index;
+        current_esp -= 4U;
+        status = vm_exec_write_u32_at_address(vm, instruction, current_esp, vm->pending_invoke_arguments[source_index]);
+        if (status != VM_EXEC_STATUS_OK) {
+            return status;
+        }
+    }
+    if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_ESP, current_esp)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    status = vm_exec_write_call_and_uses_frame(vm, instruction, return_token, target_boundary);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+    vm_exec_clear_pending_invoke_arguments(vm);
+    if (vm->active_helper_return_count < (size_t)UINT32_MAX) {
+        vm->active_helper_return_count += 1U;
+    }
+    if (vm->current_call_depth < (size_t)UINT32_MAX) {
+        vm->current_call_depth += 1U;
+    }
+    vm->root_code_stream_active = false;
     return VM_EXEC_STATUS_OK;
 }
 
@@ -4867,6 +5062,10 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             return vm_exec_execute_push(vm, instruction);
         case VM_IR_OPCODE_POP:
             return vm_exec_execute_pop(vm, instruction);
+        case VM_IR_OPCODE_INVOKE_CAPTURE_DWORD:
+            return vm_exec_execute_invoke_capture_dword(vm, instruction);
+        case VM_IR_OPCODE_INVOKE_COMMIT:
+            return vm_exec_execute_invoke_commit(vm, instruction);
         case VM_IR_OPCODE_LEAVE:
             return vm_exec_execute_leave(vm, instruction);
         case VM_IR_OPCODE_MUL:
@@ -5465,7 +5664,7 @@ VmExecStatus vm_step(Vm *vm) {
         return status;
     }
 
-    if (instruction->opcode == VM_IR_OPCODE_JMP || instruction->opcode == VM_IR_OPCODE_CALL) {
+    if (instruction->opcode == VM_IR_OPCODE_JMP || instruction->opcode == VM_IR_OPCODE_CALL || instruction->opcode == VM_IR_OPCODE_INVOKE_COMMIT) {
         vm->instruction_pointer = (size_t)instruction->destination.immediate;
     } else if (instruction->opcode == VM_IR_OPCODE_RET) {
         /* vm_exec_execute_ret either halted a root RET or transferred to the validated pseudo-EIP target. */

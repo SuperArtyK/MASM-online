@@ -6,9 +6,9 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 83 - ADDR Preparation for Future INVOKE Arguments |
+| Current milestone | Phase 84 - INVOKE DWORD Argument Lowering and Cleanup |
 
-Phase 83 prepares limited helper-level `ADDR symbol` records for future `INVOKE` argument lowering while preserving the Phase 82 executable zero-argument `INVOKE Helper` / `invoke Helper` behavior for same-file user procedures. The helper-level ADDR record can carry a 32-bit address plus ADDR-token and operand-token source spans for data, `.DATA?`, `.CONST`, and explicitly active-frame LOCAL metadata in parser tests. Source-level `INVOKE` forms with arguments and source-level executable `ADDR` remain unsupported; `INVOKE Helper, ADDR symbol` still reports `invoke-arguments-not-supported-yet` and does not execute. Phase 83 does not read or write through the computed address, push arguments, implement runtime parameters, calling conventions, external/API execution, Irvine32 routine dispatch through `INVOKE`, or QWORD/SQWORD executable LOCAL memory access.
+Phase 84 is the current runtime/source-run behavior milestone. It adds limited same-file user-procedure `INVOKE` DWORD argument lowering with exact `ret imm16` cleanup validation.
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -47,7 +47,7 @@ At a high level, the current subset includes:
 - procedure-entry and call-target classification metadata for parser/tests;
 - `PROC USES` parsing metadata for `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, and `EDI`, stored in declared order;
 - direct-CALL `PROC USES` runtime save/restore with checked automatic stack writes/reads, `stack-overflow` and `stack-underflow` diagnostics, listed-register preservation, modeled flag preservation, `EAX` return-value behavior when omitted, and `ESP` balance;
-- `LOCAL` declaration metadata for supported scalar, array, and comma-separated procedure-local declarations before executable instructions, automatic runtime LOCAL frames on selected-entry and direct-CALL procedure paths, supported Phase 80 LOCAL operands such as `mov temp, eax`, `mov eax, temp`, `mov BYTE PTR buf[0], 'A'`, `mov al, BYTE PTR buf[1]`, and `lea eax, temp`, limited parser-owned Phase 81 `PROTO` metadata for zero-argument and named `DWORD`/`SDWORD` prototypes, Phase 82 zero-argument `INVOKE Helper` / `invoke Helper` to same-file user procedures, and Phase 83 helper-level `ADDR symbol` record preparation for future INVOKE arguments;
+- `LOCAL` declaration metadata for supported scalar, array, and comma-separated procedure-local declarations before executable instructions, automatic runtime LOCAL frames on selected-entry and direct-CALL procedure paths, supported Phase 80 LOCAL operands such as `mov temp, eax`, `mov eax, temp`, `mov BYTE PTR buf[0], 'A'`, `mov al, BYTE PTR buf[1]`, and `lea eax, temp`, limited parser-owned Phase 81 `PROTO` metadata for zero-argument and named `DWORD`/`SDWORD` prototypes, Phase 82 zero-argument `INVOKE Helper` / `invoke Helper` to same-file user procedures, Phase 83 helper-level `ADDR symbol` record preparation, and Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering with exact `ret imm16` cleanup validation;
 - instruction-count watchdog behavior;
 - modeled `CF`, `ZF`, `SF`, and `OF` behavior where implemented;
 - structured diagnostics and rendered Simulator Messages;
@@ -57,7 +57,7 @@ At a high level, the current subset includes:
 Future/deferred simulator features include:
 
 - `loop`;
-- procedure-frame features beyond Phase 83 helper-level `ADDR symbol` preparation, Phase 82 zero-argument same-file user-procedure `INVOKE`, Phase 81 parser-only `PROTO` metadata, and Phase 80 LOCAL operand access, including executable source-level `INVOKE` arguments, executable source-level `ADDR`, `OFFSET local`, scaled-index LOCAL addressing, QWORD/SQWORD executable LOCAL memory operands, executable `PROTO` behavior, pointer or unnamed prototype parameters, `VARARG`, runtime parameters, and calling conventions;
+- procedure-frame features beyond Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering, Phase 83 helper-level `ADDR symbol` preparation, Phase 82 zero-argument same-file user-procedure `INVOKE`, Phase 81 parser-only `PROTO` metadata, and Phase 80 LOCAL operand access, including Irvine32 routine `INVOKE` dispatch, external/API execution, source-level `ADDR` outside accepted INVOKE arguments, `OFFSET local`, computed `ADDR` expressions, scaled-index LOCAL addressing, QWORD/SQWORD executable LOCAL memory operands, executable `PROTO` behavior, pointer or unnamed prototype parameters, `VARARG`, runtime parameters, and calling conventions;
 - selected Irvine32 routine dispatch if an owning phase defines it;
 - active-time or wall-clock watchdog behavior;
 - debugger/editor branch behavior;

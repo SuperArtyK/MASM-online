@@ -142,6 +142,10 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_PUSH,
     /// Source-level 32-bit POP stack transfer.
     VM_IR_OPCODE_POP,
+    /// Internal Phase 84 capture of one INVOKE DWORD argument before stack mutation.
+    VM_IR_OPCODE_INVOKE_CAPTURE_DWORD,
+    /// Internal Phase 84 commit that pushes captured DWORD arguments and enters the target procedure.
+    VM_IR_OPCODE_INVOKE_COMMIT,
     /// Stack-frame teardown shorthand that reads saved EBP from DWORD [EBP].
     VM_IR_OPCODE_LEAVE,
     /// Terminate execution successfully for Irvine32 `exit`.

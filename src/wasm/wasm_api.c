@@ -24,9 +24,11 @@
  * parsing metadata, Phase 77 direct-CALL PROC USES runtime save/restore,
  * Phase 78A limited OPTION NOKEYWORD parser behavior, Phase 78 LOCAL
  * diagnostics, Phase 79 automatic LOCAL frame runtime behavior, Phase 80 LOCAL
- * operand resolution and addressing, Phase 81 parser-owned PROTO metadata, Phase 82 zero-argument
- * user-procedure INVOKE lowering and diagnostics, and recovered unsupported-feature diagnostics, then reports a
- * compact JSON result for the UI.
+ * operand resolution and addressing, Phase 81 parser-owned PROTO metadata,
+ * Phase 82 zero-argument user-procedure INVOKE lowering and diagnostics,
+ * Phase 83 ADDR helper preparation, Phase 84 limited INVOKE DWORD argument
+ * lowering and cleanup validation, and recovered unsupported-feature
+ * diagnostics, then reports a compact JSON result for the UI.
  */
 
 #include "wasm_api.h"
@@ -91,16 +93,16 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase reported to JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 83U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 84U
 
-/// Suffix for the current Phase 83 runtime/source-run behavior phase.
+/// Suffix for the current Phase 84 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 83 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 83 - ADDR Preparation for Future INVOKE Arguments"
+/// Full name of the current Phase 84 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 83 ADDR preparation behavior.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-83-addr-preparation-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 84 INVOKE DWORD argument behavior.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-84-invoke-dword-argument-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U

@@ -13,13 +13,15 @@
  * frame teardown, Phase 74 RET imm16 cleanup, Phase 75 PROC
  * metadata diagnostics, Phase 76 PROC USES parsing metadata, Phase 78 LOCAL
  * declaration metadata, and Phase 78A limited OPTION NOKEYWORD metadata, Phase 81 PROTO
- * declaration metadata, and Phase 82 zero-argument INVOKE lowering are
+ * declaration metadata, Phase 82 zero-argument INVOKE lowering, Phase 83
+ * ADDR helper records, and Phase 84 limited INVOKE DWORD argument lowering are
  * supported; the Phase 79 executor uses parser-owned LOCAL metadata to create
  * automatic runtime frames, and Phase 80 lowers supported source-level LOCAL
  * operands to frame-relative runtime addresses. Accepted PROC remains
- * metadata-only for unsupported non-USES PROC tails. ENTER, ADDR/INVOKE
- * argument lowering, scaled-index addressing, Irvine32 routine bodies, and full MASM expression
- * parsing remain later milestones. The parser records
+ * metadata-only for unsupported non-USES PROC tails. ENTER, scaled-index
+ * addressing, general source-level ADDR outside accepted INVOKE arguments,
+ * Irvine32 routine bodies, and full MASM expression parsing remain later
+ * milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
  * host files or linking external libraries. Recognizable textbook
  * MASM constructs outside the implemented subset are classified with explicit
@@ -49,6 +51,9 @@
 
 /// Maximum CALL/INVOKE-lowered CALL fixups retained during one parse operation.
 #define VM_PARSER_CALL_FIXUP_CAPACITY 128U
+
+/// Maximum Phase 84 DWORD INVOKE arguments accepted on one source INVOKE line.
+#define VM_PARSER_INVOKE_ARGUMENT_CAPACITY VM_PROTO_PARAMETER_CAPACITY
 
 
 /// Formats an unsigned integer with comma group separators for diagnostics.
@@ -191,6 +196,8 @@ typedef struct VmParserCallFixup {
     bool nokeyword_offset_disabled;
     /// Whether the lowered CALL opcode originated from Phase 82 INVOKE syntax.
     bool originated_from_invoke;
+    /// Number of Phase 84 DWORD arguments captured for this INVOKE, or zero for Phase 82 zero-argument INVOKE/CALL.
+    size_t invoke_argument_count;
 } VmParserCallFixup;
 
 /// Owns mutable parser state for one parse operation.
@@ -368,7 +375,13 @@ static bool vm_parser_parse_constant_expression(VmParserState *state, VmParserCo
 /// Parses near RET with optional Phase 74 imm16 cleanup before generic operand validation.
 static bool vm_parser_parse_ret_instruction(VmParserState *state, VmIrOpcode opcode, const VmLexerToken *mnemonic_token);
 
-/// Parses Phase 82 zero-argument INVOKE syntax or reports targeted INVOKE diagnostics.
+/// Returns the currently open procedure range, if operand parsing is inside one.
+static VmProcedureRange *vm_parser_current_procedure_range(VmParserState *state);
+
+/// Records RET cleanup metadata on the currently open procedure, when any.
+static void vm_parser_record_current_procedure_ret_cleanup(VmParserState *state, bool has_imm16, uint32_t cleanup_bytes);
+
+/// Parses Phase 82 zero-argument INVOKE and Phase 84 DWORD-argument INVOKE syntax, or reports targeted INVOKE diagnostics.
 static bool vm_parser_parse_invoke_instruction(VmParserState *state, const VmLexerToken *mnemonic_token);
 
 static bool vm_parser_expect_comma(VmParserState *state);
@@ -828,7 +841,7 @@ bool vm_parser_build_addr_argument_record(
             out_diagnostic,
             VM_PARSER_DIAGNOSTIC_ADDR_OUTSIDE_INVOKE,
             addr_token,
-            "ADDR argument records can be built only by the future INVOKE-argument helper path."
+            "ADDR argument records can be built only by the accepted INVOKE-argument helper path."
         );
         return false;
     }
@@ -860,7 +873,7 @@ bool vm_parser_build_addr_argument_record(
             out_diagnostic,
             VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR_EXPRESSION,
             tail_token,
-            "ADDR supports only a plain symbol in the helper path; computed address expressions are deferred to a future INVOKE-argument milestone."
+            "ADDR supports only a plain symbol in the helper path; computed address expressions remain deferred to a future ADDR-expression phase."
         );
         return false;
     }
@@ -1567,11 +1580,9 @@ static bool vm_parser_add_proto_related_diagnostic(
 
 /// Returns whether one accepted PROTO is compatible with the currently available PROC metadata.
 ///
-/// Phase 81 has no accepted PROC parameter metadata. A same-name PROC therefore
-/// links cleanly only to a zero-argument prototype. Parameterized prototypes are
-/// preserved for future INVOKE work but remain incompatible with a current bare
-/// PROC declaration until a later PROC-parameter phase defines executable
-/// parameter metadata.
+/// Phase 84 allows accepted PROTO parameter-count metadata to link with a
+/// same-name bare PROC so INVOKE argument-count validation can use the prototype
+/// without implementing source-level named PROC parameter access.
 ///
 /// @param prototype Accepted prototype metadata to compare.
 /// @param procedure Accepted procedure metadata to compare.
@@ -1581,7 +1592,7 @@ static bool vm_parser_prototype_matches_procedure(const VmPrototype *prototype, 
         return false;
     }
 
-    return prototype->parameter_count == 0U;
+    return prototype->parameter_count <= (size_t)VM_PROTO_PARAMETER_CAPACITY;
 }
 
 /// Links an accepted PROTO to an existing same-name PROC when current metadata can represent the match.
@@ -5217,6 +5228,7 @@ static bool vm_parser_parse_ret_instruction(VmParserState *state, VmIrOpcode opc
         if (!vm_parser_expect_line_end(state)) {
             return false;
         }
+        vm_parser_record_current_procedure_ret_cleanup(state, false, 0U);
         return vm_parser_emit_instruction(state, opcode, destination, source, mnemonic_token);
     }
 
@@ -5248,7 +5260,30 @@ static bool vm_parser_parse_ret_instruction(VmParserState *state, VmIrOpcode opc
     }
 
     source = vm_ir_operand_immediate((uint32_t)expression.value, 16U);
+    vm_parser_record_current_procedure_ret_cleanup(state, true, (uint32_t)expression.value);
     return vm_parser_emit_instruction(state, opcode, destination, source, mnemonic_token);
+}
+
+static void vm_parser_record_current_procedure_ret_cleanup(VmParserState *state, bool has_imm16, uint32_t cleanup_bytes) {
+    VmProcedureRange *procedure = vm_parser_current_procedure_range(state);
+
+    if (procedure == NULL) {
+        return;
+    }
+    procedure->ret_instruction_count += 1U;
+    if (!has_imm16) {
+        procedure->has_plain_ret = true;
+        return;
+    }
+    if (!procedure->has_ret_imm16_cleanup) {
+        procedure->has_ret_imm16_cleanup = true;
+        procedure->has_consistent_ret_cleanup = true;
+        procedure->ret_cleanup_bytes = cleanup_bytes;
+        return;
+    }
+    if (procedure->ret_cleanup_bytes != cleanup_bytes) {
+        procedure->has_consistent_ret_cleanup = false;
+    }
 }
 
 
@@ -7216,7 +7251,7 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
     }
 
     if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "ADDR")) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_ADDR_OUTSIDE_INVOKE, token, "ADDR is reserved for future INVOKE argument handling and is not a general source operand.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_ADDR_OUTSIDE_INVOKE, token, "ADDR is reserved for accepted INVOKE argument handling and is not a general source operand.");
         return false;
     }
 
@@ -8757,28 +8792,6 @@ static bool vm_parser_parse_direct_branch_instruction(VmParserState *state, VmIr
 }
 
 
-/// Finds the first source token that belongs to an INVOKE argument tail.
-///
-/// @param state Parser state positioned after the INVOKE target token.
-/// @return First argument token after an optional comma, or NULL at line end.
-static const VmLexerToken *vm_parser_invoke_first_argument_token(VmParserState *state) {
-    const VmLexerToken *token = vm_parser_current_token(state);
-
-    if (token != NULL && token->kind == VM_LEXER_TOKEN_COMMA) {
-        const VmLexerToken *next = vm_parser_peek_token(state, 1U);
-        if (next != NULL && !vm_parser_is_line_end_token(next)) {
-            return next;
-        }
-        return token;
-    }
-
-    if (token != NULL && !vm_parser_is_line_end_token(token)) {
-        return token;
-    }
-
-    return NULL;
-}
-
 /// Classifies an INVOKE target that must report a non-goal diagnostic before argument diagnostics.
 ///
 /// @param target_token Target token from the INVOKE line.
@@ -8838,8 +8851,15 @@ static bool vm_parser_classify_immediate_invoke_non_goal(
 /// @param instruction_index Emitted CALL instruction index.
 /// @param target_token Source token naming the CALL or INVOKE target.
 /// @param originated_from_invoke true when the CALL opcode was lowered from INVOKE syntax.
+/// @param invoke_argument_count Number of Phase 84 DWORD INVOKE arguments captured before the CALL/commit instruction.
 /// @return true when the fixup was stored.
-static bool vm_parser_add_call_fixup(VmParserState *state, size_t instruction_index, const VmLexerToken *target_token, bool originated_from_invoke) {
+static bool vm_parser_add_call_fixup(
+    VmParserState *state,
+    size_t instruction_index,
+    const VmLexerToken *target_token,
+    bool originated_from_invoke,
+    size_t invoke_argument_count
+) {
     VmParserCallFixup *fixup = NULL;
 
     if (state == NULL || target_token == NULL) {
@@ -8857,6 +8877,7 @@ static bool vm_parser_add_call_fixup(VmParserState *state, size_t instruction_in
     fixup->nokeyword_loop_disabled = state->nokeyword_loop_disabled;
     fixup->nokeyword_offset_disabled = state->nokeyword_offset_disabled;
     fixup->originated_from_invoke = originated_from_invoke;
+    fixup->invoke_argument_count = invoke_argument_count;
     state->call_fixup_count += 1U;
     return true;
 }
@@ -8965,7 +8986,7 @@ static bool vm_parser_parse_direct_call_instruction(VmParserState *state, const 
         return false;
     }
 
-    return vm_parser_add_call_fixup(state, instruction_index, target_token, false);
+    return vm_parser_add_call_fixup(state, instruction_index, target_token, false, 0U);
 }
 
 /// Parses one IMUL instruction, including Phase 54 and Phase 55 forms.
@@ -9439,11 +9460,231 @@ static bool vm_parser_diagnose_irvine32_symbol_use_if_known(VmParserState *state
     return true;
 }
 
-/// Parses Phase 82 zero-argument INVOKE and lowers accepted forms to CALL IR.
+/// Returns whether a token terminates one Phase 84 INVOKE argument.
 ///
-/// The parser accepts only `INVOKE Helper` / `invoke Helper` for same-file user
-/// procedures that are validated during the CALL-fixup resolution pass. Any
-/// argument tail remains future-owned and is diagnosed before lowering.
+/// @param token Candidate token after an argument.
+/// @return true for comma, line end, EOF, or NULL.
+static bool vm_parser_token_is_invoke_argument_boundary(const VmLexerToken *token) {
+    return token == NULL || token->kind == VM_LEXER_TOKEN_COMMA || vm_parser_is_line_end_token(token);
+}
+
+/// Builds a Phase 84 address-valued operand for a data or `.CONST` symbol.
+///
+/// @param symbol Addressable data-symbol metadata.
+/// @return Relocatable immediate operand containing the symbol address.
+static VmIrOperand vm_parser_make_invoke_symbol_address_argument(const VmSymbol *symbol) {
+    VmIrOperand operand = vm_ir_operand_immediate(symbol != NULL ? symbol->address : 0U, 32U);
+    if (symbol != NULL) {
+        operand = vm_ir_operand_with_relocation(operand, vm_parser_symbol_relocation_kind(symbol->section));
+    }
+    return operand;
+}
+
+/// Builds a Phase 84 address-valued operand for an active procedure LOCAL.
+///
+/// The operand is resolved by the executor against the caller's active LOCAL
+/// frame during INVOKE argument capture; it is not dereferenced.
+///
+/// @param local LOCAL metadata entry to encode.
+/// @return Relocatable immediate operand containing frame-independent LOCAL metadata.
+static VmIrOperand vm_parser_make_invoke_local_address_argument(const VmProcedureLocalSymbol *local) {
+    VmIrOperand operand = vm_ir_operand_immediate(local != NULL ? (uint32_t)local->ebp_offset : 0U, 32U);
+    operand.address = local != NULL ? (uint32_t)local->ebp_offset : 0U;
+    operand.relocation = VM_IR_RELOCATION_LOCAL;
+    return operand;
+}
+
+/// Parses a Phase 84 `OFFSET symbol` INVOKE argument.
+///
+/// @param state Parser state positioned at OFFSET.
+/// @param out_operand Receives an address-valued immediate operand.
+/// @return true when the argument was accepted.
+static bool vm_parser_parse_invoke_offset_argument(VmParserState *state, VmIrOperand *out_operand) {
+    const VmLexerToken *offset_token = vm_parser_current_token(state);
+    const VmLexerToken *symbol_token = vm_parser_peek_token(state, 1U);
+    const VmLexerToken *tail_token = vm_parser_peek_token(state, 2U);
+    VmSymbolLookupStatus lookup_status = VM_SYMBOL_LOOKUP_NOT_FOUND;
+    const VmSymbol *symbol = NULL;
+
+    if (state == NULL || out_operand == NULL || offset_token == NULL) {
+        return false;
+    }
+    if (symbol_token == NULL || symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE_ARGUMENT, offset_token, "OFFSET INVOKE arguments require a following data, .DATA?, or .CONST symbol.");
+        return false;
+    }
+    if (!vm_parser_token_is_invoke_argument_boundary(tail_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE_ARGUMENT, tail_token, "Phase 84 INVOKE OFFSET arguments support only plain `OFFSET symbol`; computed OFFSET expressions remain deferred.");
+        return false;
+    }
+    if (vm_parser_find_current_local_operand(state, symbol_token, NULL) != NULL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE_ARGUMENT, symbol_token, "OFFSET local INVOKE arguments remain deferred; use ADDR localVar for the Phase 84 local-address form.");
+        return false;
+    }
+    symbol = vm_symbol_find_by_name_with_policy(
+        state->config->symbols,
+        state->result->symbol_count,
+        symbol_token->lexeme,
+        symbol_token->lexeme_length,
+        vm_parser_symbol_case_policy(state->user_symbol_case_policy),
+        &lookup_status
+    );
+    if (symbol == NULL) {
+        if (lookup_status == VM_SYMBOL_LOOKUP_AMBIGUOUS) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_SYMBOL, symbol_token, "Multiple data symbols match this OFFSET INVOKE argument under CASEMAP:ALL because their names differ only by letter case.");
+        } else {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, symbol_token, "OFFSET INVOKE argument references an unknown data, .DATA?, or .CONST symbol.");
+        }
+        return false;
+    }
+    *out_operand = vm_parser_make_invoke_symbol_address_argument(symbol);
+    vm_parser_advance_many(state, 2U);
+    return true;
+}
+
+/// Parses a Phase 84 `ADDR symbol` INVOKE argument.
+///
+/// @param state Parser state positioned at ADDR.
+/// @param out_operand Receives an address-valued immediate operand.
+/// @return true when the argument was accepted.
+static bool vm_parser_parse_invoke_addr_argument(VmParserState *state, VmIrOperand *out_operand) {
+    const VmLexerToken *addr_token = vm_parser_current_token(state);
+    const VmLexerToken *operand_token = vm_parser_peek_token(state, 1U);
+    const VmLexerToken *tail_token = vm_parser_peek_token(state, 2U);
+    VmSymbolLookupStatus lookup_status = VM_SYMBOL_LOOKUP_NOT_FOUND;
+    const VmSymbol *symbol = NULL;
+    VmProcedureRange *local_procedure = NULL;
+    VmProcedureLocalSymbol *local = NULL;
+
+    if (state == NULL || out_operand == NULL || addr_token == NULL) {
+        return false;
+    }
+    if (operand_token == NULL || operand_token->kind == VM_LEXER_TOKEN_EOF || operand_token->kind == VM_LEXER_TOKEN_NEWLINE) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_ADDR_TARGET, addr_token, "ADDR requires a following addressable data, .CONST, .DATA?, or active-frame LOCAL symbol.");
+        return false;
+    }
+    if (operand_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_ADDR_TARGET, operand_token, "ADDR target must be an addressable data, .CONST, .DATA?, or active-frame LOCAL symbol.");
+        return false;
+    }
+    if (!vm_parser_token_is_invoke_argument_boundary(tail_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR_EXPRESSION, tail_token, "ADDR supports only a plain symbol in Phase 84 INVOKE arguments; computed address expressions remain deferred.");
+        return false;
+    }
+    symbol = vm_symbol_find_by_name_with_policy(
+        state->config->symbols,
+        state->result->symbol_count,
+        operand_token->lexeme,
+        operand_token->lexeme_length,
+        vm_parser_symbol_case_policy(state->user_symbol_case_policy),
+        &lookup_status
+    );
+    if (symbol != NULL) {
+        *out_operand = vm_parser_make_invoke_symbol_address_argument(symbol);
+        vm_parser_advance_many(state, 2U);
+        return true;
+    }
+    local = vm_parser_find_current_local_operand(state, operand_token, &local_procedure);
+    if (local != NULL && local_procedure != NULL) {
+        *out_operand = vm_parser_make_invoke_local_address_argument(local);
+        vm_parser_advance_many(state, 2U);
+        return true;
+    }
+    if (lookup_status == VM_SYMBOL_LOOKUP_AMBIGUOUS) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_SYMBOL, operand_token, "Multiple data symbols match this ADDR target under CASEMAP:ALL because their names differ only by letter case.");
+        return false;
+    }
+    if (vm_parser_find_equate(state, operand_token) != NULL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_ADDR_TARGET, operand_token, "ADDR requires addressable storage, not a numeric equate.");
+        return false;
+    }
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_ADDR_SYMBOL, operand_token, "ADDR references an unknown addressable data, .CONST, .DATA?, or active-frame LOCAL symbol.");
+    return false;
+}
+
+/// Parses one Phase 84 INVOKE DWORD argument.
+///
+/// @param state Parser state positioned at the argument start.
+/// @param out_operand Receives a capture-source operand.
+/// @return true when the argument is inside the Phase 84 DWORD subset.
+static bool vm_parser_parse_invoke_dword_argument(VmParserState *state, VmIrOperand *out_operand) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+    const VmSymbol *symbol = NULL;
+    VmSymbolLookupStatus lookup_status = VM_SYMBOL_LOOKUP_NOT_FOUND;
+
+    if (state == NULL || out_operand == NULL || token == NULL) {
+        return false;
+    }
+    if (token->kind == VM_LEXER_TOKEN_REGISTER) {
+        uint8_t width_bits = vm_cpu_register_width_bits(token->register_id);
+        if (width_bits != 32U) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENT_WIDTH_UNSUPPORTED, token, "Phase 84 INVOKE accepts only full 32-bit register arguments; use explicit extension before INVOKE for 8-bit or 16-bit aliases.");
+            return false;
+        }
+        *out_operand = vm_ir_operand_register(token->register_id, 32U);
+        vm_parser_advance(state);
+        return true;
+    }
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "OFFSET") &&
+        !vm_parser_nokeyword_word_is_disabled(state, VM_PARSER_NOKEYWORD_WORD_OFFSET)) {
+        return vm_parser_parse_invoke_offset_argument(state, out_operand);
+    }
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "ADDR")) {
+        return vm_parser_parse_invoke_addr_argument(state, out_operand);
+    }
+    if (vm_parser_current_token_starts_ptr_width(state)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENT_WIDTH_UNSUPPORTED, token, "Phase 84 INVOKE arguments are DWORD stack slots; explicit PTR-width memory arguments remain deferred.");
+        return false;
+    }
+    if (token->kind == VM_LEXER_TOKEN_NUMBER || token->kind == VM_LEXER_TOKEN_PLUS || token->kind == VM_LEXER_TOKEN_MINUS ||
+        token->kind == VM_LEXER_TOKEN_LEFT_PAREN ||
+        (token->kind == VM_LEXER_TOKEN_IDENTIFIER &&
+         (vm_parser_token_names_equate_expression(state, token) || vm_parser_token_is_constant_unary_operator(token)))) {
+        VmParserConstantExpression expression;
+        uint32_t encoded_value = 0U;
+        memset(&expression, 0, sizeof(expression));
+        if (!vm_parser_parse_constant_expression(state, &expression)) {
+            return false;
+        }
+        if (!vm_parser_encode_i64_for_u32_immediate(expression.value, &encoded_value)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, expression.start_token, "INVOKE immediate argument exceeds the current 32-bit IR range.");
+            return false;
+        }
+        *out_operand = vm_ir_operand_immediate(encoded_value, 32U);
+        return true;
+    }
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER) {
+        symbol = vm_symbol_find_by_name_with_policy(
+            state->config->symbols,
+            state->result->symbol_count,
+            token->lexeme,
+            token->lexeme_length,
+            vm_parser_symbol_case_policy(state->user_symbol_case_policy),
+            &lookup_status
+        );
+        if (symbol != NULL) {
+            if (symbol->data_type != VM_SYMBOL_DATA_TYPE_DWORD && symbol->data_type != VM_SYMBOL_DATA_TYPE_SDWORD) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENT_WIDTH_UNSUPPORTED, token, "Data-symbol INVOKE arguments must name DWORD or SDWORD storage in Phase 84.");
+                return false;
+            }
+            *out_operand = vm_ir_operand_with_relocation(vm_ir_operand_memory(symbol->address, 32U), vm_parser_symbol_relocation_kind(symbol->section));
+            vm_parser_advance(state);
+            return true;
+        }
+        if (lookup_status == VM_SYMBOL_LOOKUP_AMBIGUOUS) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_SYMBOL, token, "Multiple data symbols match this INVOKE argument under CASEMAP:ALL because their names differ only by letter case.");
+            return false;
+        }
+    }
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE_ARGUMENT, token, "Unsupported INVOKE argument form. The accepted DWORD INVOKE subset accepts only 32-bit immediates, full 32-bit registers, DWORD/SDWORD data symbols, OFFSET symbol, ADDR symbol, and ADDR active LOCAL.");
+    return false;
+}
+
+/// Parses Phase 82 zero-argument INVOKE and Phase 84 DWORD-argument INVOKE.
+///
+/// The parser accepts same-file user procedures that are validated during the
+/// CALL-fixup resolution pass. Argument forms are captured before the commit
+/// instruction so runtime execution can read all values before stack mutation.
 ///
 /// @param state Parser state to mutate.
 /// @param mnemonic_token INVOKE mnemonic token.
@@ -9452,6 +9693,8 @@ static bool vm_parser_parse_invoke_instruction(VmParserState *state, const VmLex
     VmIrOperand target_operand;
     const VmLexerToken *target_token = NULL;
     size_t instruction_index = 0U;
+    VmIrOperand arguments[VM_PARSER_INVOKE_ARGUMENT_CAPACITY];
+    size_t argument_count = 0U;
 
     if (state == NULL || mnemonic_token == NULL) {
         return false;
@@ -9486,7 +9729,6 @@ static bool vm_parser_parse_invoke_instruction(VmParserState *state, const VmLex
     if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
         VmParserDiagnosticCode non_goal_code = VM_PARSER_DIAGNOSTIC_NONE;
         const char *non_goal_message = NULL;
-        const VmLexerToken *argument_token = vm_parser_invoke_first_argument_token(state);
 
         if (vm_parser_classify_immediate_invoke_non_goal(target_token, &non_goal_code, &non_goal_message)) {
             vm_parser_add_diagnostic(state, non_goal_code, target_token, non_goal_message);
@@ -9494,25 +9736,76 @@ static bool vm_parser_parse_invoke_instruction(VmParserState *state, const VmLex
             return true;
         }
 
-        vm_parser_add_diagnostic(
-            state,
-            VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENTS_NOT_SUPPORTED_YET,
-            argument_token != NULL ? argument_token : target_token,
-            "INVOKE arguments are not implemented yet; the current INVOKE subset accepts only zero-argument INVOKE to same-file user procedures."
-        );
-        vm_parser_recover_skip_line(state);
-        return true;
+        if (vm_parser_current_token(state) == NULL || vm_parser_current_token(state)->kind != VM_LEXER_TOKEN_COMMA) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE_ARGUMENT, vm_parser_current_token(state), "INVOKE arguments must follow the target after a comma.");
+            vm_parser_recover_skip_line(state);
+            return true;
+        }
+        while (vm_parser_current_token(state) != NULL && vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_COMMA) {
+            const VmLexerToken *argument_token = NULL;
+            vm_parser_advance(state);
+            argument_token = vm_parser_current_token(state);
+            if (vm_parser_is_line_end_token(argument_token)) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE_ARGUMENT, argument_token, "INVOKE argument list cannot end with a trailing comma.");
+                vm_parser_recover_skip_line(state);
+                return true;
+            }
+            if (argument_count >= (size_t)VM_PARSER_INVOKE_ARGUMENT_CAPACITY) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENT_COUNT_MISMATCH, argument_token, "INVOKE accepts at most 16 DWORD arguments in Phase 84.");
+                vm_parser_recover_skip_line(state);
+                return true;
+            }
+            if (!vm_parser_parse_invoke_dword_argument(state, &arguments[argument_count])) {
+                vm_parser_recover_skip_line(state);
+                return true;
+            }
+            argument_count += 1U;
+            if (vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+                break;
+            }
+            if (vm_parser_current_token(state) == NULL || vm_parser_current_token(state)->kind != VM_LEXER_TOKEN_COMMA) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE_ARGUMENT, vm_parser_current_token(state), "INVOKE arguments must be separated by commas.");
+                vm_parser_recover_skip_line(state);
+                return true;
+            }
+        }
     }
 
     if (!vm_parser_expect_line_end(state)) {
         return false;
     }
 
-    instruction_index = state->result->instruction_count;
-    if (!vm_parser_emit_instruction(state, VM_IR_OPCODE_CALL, target_operand, vm_ir_operand_none(), mnemonic_token)) {
-        return false;
+    if (argument_count == 0U) {
+        instruction_index = state->result->instruction_count;
+        if (!vm_parser_emit_instruction(state, VM_IR_OPCODE_CALL, target_operand, vm_ir_operand_none(), mnemonic_token)) {
+            return false;
+        }
+        return vm_parser_add_call_fixup(state, instruction_index, target_token, true, 0U);
     }
-    return vm_parser_add_call_fixup(state, instruction_index, target_token, true);
+
+    {
+        size_t argument_index = 0U;
+        for (argument_index = 0U; argument_index < argument_count; argument_index += 1U) {
+            if (!vm_parser_emit_instruction(
+                    state,
+                    VM_IR_OPCODE_INVOKE_CAPTURE_DWORD,
+                    vm_ir_operand_immediate((uint32_t)argument_index, 32U),
+                    arguments[argument_index],
+                    mnemonic_token
+                )) {
+                return false;
+            }
+        }
+    }
+    instruction_index = state->result->instruction_count;
+    {
+        VmIrOperand return_operand = vm_ir_operand_branch_target(0U);
+        return_operand.width_bits = (uint8_t)argument_count;
+        if (!vm_parser_emit_instruction(state, VM_IR_OPCODE_INVOKE_COMMIT, target_operand, return_operand, mnemonic_token)) {
+            return false;
+        }
+    }
+    return vm_parser_add_call_fixup(state, instruction_index, target_token, true, argument_count);
 }
 
 /// Parses one implemented instruction.
@@ -9540,7 +9833,7 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
             opcode = VM_IR_OPCODE_EXIT;
         } else {
             if (vm_parser_token_equals(mnemonic_token, "ADDR")) {
-                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_ADDR_OUTSIDE_INVOKE, mnemonic_token, "ADDR is reserved for future INVOKE argument handling and is not a standalone source-level instruction or general operand.");
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_ADDR_OUTSIDE_INVOKE, mnemonic_token, "ADDR is reserved for accepted INVOKE argument handling and is not a standalone source-level instruction or general operand.");
                 return false;
             }
             if (vm_parser_token_equals(mnemonic_token, "retf")) {
@@ -10124,19 +10417,85 @@ static bool vm_parser_reject_classified_invoke_target(
     }
 }
 
-/// Resolves one retained direct CALL or INVOKE-lowered CALL fixup to a procedure-entry instruction index.
+/// Validates Phase 84 INVOKE argument count and callee cleanup metadata.
+///
+/// @param state Parser state to mutate with targeted diagnostics.
+/// @param fixup INVOKE fixup carrying the accepted argument count.
+/// @param range Target procedure range and RET metadata.
+/// @param target_token Source token naming the INVOKE target.
+/// @return true when Phase 84 metadata proves exact DWORD argument cleanup.
+static bool vm_parser_validate_phase84_invoke_metadata(
+    VmParserState *state,
+    const VmParserCallFixup *fixup,
+    const VmProcedureRange *range,
+    const VmLexerToken *target_token
+) {
+    const VmPrototype *prototype = NULL;
+    uint32_t expected_cleanup_bytes = 0U;
+
+    if (state == NULL || fixup == NULL || range == NULL || target_token == NULL) {
+        return false;
+    }
+    if (!fixup->originated_from_invoke) {
+        return true;
+    }
+
+    prototype = vm_parser_find_prototype(state, target_token);
+    if (prototype != NULL && prototype->parameter_count != fixup->invoke_argument_count) {
+        char message[192];
+        snprintf(
+            message,
+            sizeof(message),
+            "INVOKE argument count mismatch: target prototype expects %u DWORD argument(s), but this INVOKE supplies %u.",
+            (unsigned)prototype->parameter_count,
+            (unsigned)fixup->invoke_argument_count
+        );
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENT_COUNT_MISMATCH, target_token, message);
+        return false;
+    }
+
+    if (fixup->invoke_argument_count == 0U) {
+        return true;
+    }
+    if (fixup->invoke_argument_count > (size_t)(UINT32_MAX / 4U)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENT_COUNT_MISMATCH, target_token, "INVOKE argument byte count overflowed the Phase 84 DWORD stack-slot limit.");
+        return false;
+    }
+    expected_cleanup_bytes = (uint32_t)fixup->invoke_argument_count * 4U;
+    if (range->ret_instruction_count == 0U || range->has_plain_ret || !range->has_ret_imm16_cleanup ||
+        !range->has_consistent_ret_cleanup || range->ret_cleanup_bytes != expected_cleanup_bytes) {
+        char message[256];
+        snprintf(
+            message,
+            sizeof(message),
+            "INVOKE cleanup mismatch: Phase 84 DWORD INVOKE to `%.*s` requires callee cleanup `ret %u` for %u argument byte(s).",
+            (int)target_token->lexeme_length,
+            target_token->lexeme,
+            (unsigned)expected_cleanup_bytes,
+            (unsigned)expected_cleanup_bytes
+        );
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVOKE_CLEANUP_MISMATCH, target_token, message);
+        return false;
+    }
+
+    return true;
+}
+
+/// Resolves one retained direct CALL or INVOKE fixup to a procedure-entry instruction index.
 ///
 /// @param state Parser state to mutate.
-/// @param fixup CALL fixup to classify and apply.
+/// @param fixup CALL/INVOKE fixup to classify and apply.
 /// @return true when the fixup was accepted and the emitted instruction patched.
 static bool vm_parser_resolve_one_call_fixup(VmParserState *state, const VmParserCallFixup *fixup) {
     VmIrInstruction *instruction = NULL;
+    VmIrOperand return_operand = vm_ir_operand_none();
     VmParserCallTargetContext context;
     VmParserCallTargetClassification classification;
     const VmProcedureRange *range = NULL;
     const VmCodeLabel *label = NULL;
     const VmLexerToken *target_token = fixup != NULL ? &fixup->target_token : NULL;
     size_t target_instruction_index = 0U;
+    bool phase84_invoke_commit = false;
 
     if (state == NULL || state->config == NULL || state->result == NULL || fixup == NULL || target_token == NULL) {
         return false;
@@ -10147,9 +10506,11 @@ static bool vm_parser_resolve_one_call_fixup(VmParserState *state, const VmParse
         return false;
     }
 
+    phase84_invoke_commit = fixup->originated_from_invoke && fixup->invoke_argument_count > 0U;
     instruction = &state->config->instructions[fixup->instruction_index];
-    if (instruction->opcode != VM_IR_OPCODE_CALL) {
-        vm_parser_add_diagnostic(state, fixup->originated_from_invoke ? VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET : VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, fixup->originated_from_invoke ? "Internal INVOKE fixup references a non-CALL instruction." : "Internal direct CALL fixup references a non-CALL instruction.");
+    if ((!phase84_invoke_commit && instruction->opcode != VM_IR_OPCODE_CALL) ||
+        (phase84_invoke_commit && instruction->opcode != VM_IR_OPCODE_INVOKE_COMMIT)) {
+        vm_parser_add_diagnostic(state, fixup->originated_from_invoke ? VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET : VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, fixup->originated_from_invoke ? "Internal INVOKE fixup references an unexpected instruction." : "Internal direct CALL fixup references a non-CALL instruction.");
         return false;
     }
 
@@ -10186,12 +10547,20 @@ static bool vm_parser_resolve_one_call_fixup(VmParserState *state, const VmParse
         return false;
     }
 
+    if (fixup->originated_from_invoke && !vm_parser_validate_phase84_invoke_metadata(state, fixup, range, target_token)) {
+        return false;
+    }
+
     instruction->destination = vm_ir_operand_branch_target((uint32_t)target_instruction_index);
-    instruction->source = vm_ir_operand_branch_target((uint32_t)vm_parser_phase70_call_return_target_index(
+    return_operand = vm_ir_operand_branch_target((uint32_t)vm_parser_phase70_call_return_target_index(
         &context,
         fixup->instruction_index,
         state->result->instruction_count
     ));
+    if (phase84_invoke_commit) {
+        return_operand.width_bits = (uint8_t)fixup->invoke_argument_count;
+    }
+    instruction->source = return_operand;
     return true;
 }
 
@@ -13391,6 +13760,12 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "invoke-arguments-not-supported-yet";
         case VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENT_COUNT_MISMATCH:
             return "invoke-argument-count-mismatch";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE_ARGUMENT:
+            return "unsupported-invoke-argument";
+        case VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENT_WIDTH_UNSUPPORTED:
+            return "invoke-argument-width-unsupported";
+        case VM_PARSER_DIAGNOSTIC_INVOKE_CLEANUP_MISMATCH:
+            return "invoke-cleanup-mismatch";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_INVOKE:
             return "unsupported-external-invoke";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE_INVOKE:

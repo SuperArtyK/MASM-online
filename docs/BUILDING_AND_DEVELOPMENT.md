@@ -13,9 +13,9 @@ Source-of-truth rule:
 
 Current milestone:
 
-- Phase 83 - ADDR Preparation for Future INVOKE Arguments
+- Phase 84 - INVOKE DWORD Argument Lowering and Cleanup
 
-Phase 83 advances runtime/source-run behavior metadata and the source-run output-contract identifier because helper-level ADDR argument-record diagnostics and source-level ADDR rejection behavior changed while zero-argument `INVOKE Helper` / `invoke Helper` remains executable for same-file user procedures. Phase 82 zero-argument INVOKE behavior, Phase 81 limited parser-owned `PROTO` metadata, Phase 80 LOCAL operand resolution/addressing, and Phase 79 automatic LOCAL frame behavior remain part of the public source-run behavior.
+Phase 84 advances runtime/source-run behavior metadata and the source-run output-contract identifier because limited same-file user-procedure `INVOKE` DWORD argument lowering, exact `ret imm16` cleanup validation, targeted INVOKE argument diagnostics, and rendered Simulator Messages changed. Phase 83 helper-level ADDR preparation, Phase 82 zero-argument INVOKE behavior, Phase 81 limited parser-owned `PROTO` metadata, Phase 80 LOCAL operand resolution/addressing, and Phase 79 automatic LOCAL frame behavior remain part of the public source-run behavior.
 
 This file is a build and development reference. It does not define supported MASM syntax or runtime behavior. For current syntax and diagnostics, see [`SUPPORTED_SYNTAX.md`](SUPPORTED_SYNTAX.md). For product boundaries and stable behavior rules, see [`FULL_IMPLEMENTATION_SPEC.md`](FULL_IMPLEMENTATION_SPEC.md). For phase order and acceptance criteria, see [`INCREMENTAL_IMPLEMENTATION_GUIDE.md`](INCREMENTAL_IMPLEMENTATION_GUIDE.md). For milestone history, see [`MILESTONE_HISTORY.md`](MILESTONE_HISTORY.md).
 
@@ -29,7 +29,7 @@ Browser/Wasm artifact verification has separate levels:
 
 2. **Checked-in artifact-content verification**
 
-   A binary-content scan of checked-in `web/dist/masm32_sim_core.wasm` may confirm that the artifact contains an expected output-contract string such as `phase-83-addr-preparation-output-contract-v1`. This is useful stale-artifact evidence, but it is not a rebuild.
+   A binary-content scan of checked-in `web/dist/masm32_sim_core.wasm` may confirm that the artifact contains an expected output-contract string such as `phase-84-invoke-dword-argument-output-contract-v1`. This is useful stale-artifact evidence, but it is not a rebuild.
 
 3. **Emscripten rebuild verification**
 
@@ -353,7 +353,7 @@ Browser/Wasm artifact compatibility verified through the documented output-contr
 The C source-run JSON field is `sourceRunOutputContract`. Its value is a source-run output-contract version token for the public source-run JSON shape, ordering, serialization, and protocol interpretation. A token may include the milestone in which that output contract was introduced. For example:
 
 ```text
-phase-83-addr-preparation-output-contract-v1
+phase-84-invoke-dword-argument-output-contract-v1
 ```
 
 The example above is both the token expected by this source tree and an example of the naming convention. A phase-looking prefix in such a token is contract-version naming from the phase that introduced that specific output contract. It is not a separate repository/runtime status field or an absolute value that future output-contract-changing phases must keep.

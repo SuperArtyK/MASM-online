@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for parser behavior through Phase 83 ADDR preparation coverage.
+ * @brief Unit and integration tests for parser behavior through Phase 84 INVOKE DWORD argument coverage.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
@@ -8,7 +8,7 @@
  * Phase 67A procedure-range metadata, Phase 68 call-target classification
  * metadata, Phase 68B EIP source-operand restrictions, Phase 69 direct CALL,
  * Phase 70 plain near RET, Phase 72A source-level PUSH/POP, Phase 73
- * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, Phase 78 LOCAL parser metadata, Phase 78A limited OPTION NOKEYWORD support, Phase 81 PROTO metadata, Phase 82 zero-argument INVOKE parsing and targeted INVOKE diagnostics, Phase 83 helper-level ADDR record preparation, unsupported syntax, INCLUDELIB non-goal diagnostics,
+ * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, Phase 78 LOCAL parser metadata, Phase 78A limited OPTION NOKEYWORD support, Phase 81 PROTO metadata, Phase 82 zero-argument INVOKE parsing and targeted INVOKE diagnostics, Phase 83 helper-level ADDR record preparation, Phase 84 INVOKE DWORD argument parsing, unsupported syntax, INCLUDELIB non-goal diagnostics,
  * and integration with the current executor
  * without adding future execution behavior.
  */
@@ -1829,10 +1829,10 @@ static int test_phase81_proto_proc_linking(void) {
         "END Helper\n",
         &buffers,
         &result
-    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "parameterized PROTO should mismatch current bare PROC metadata");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_PROTO_PROC_MISMATCH, "PROTO/PROC mismatch diagnostic should be specific");
-    failures += expect_u32(buffers.diagnostics[0].location.line, 3U, "PROTO/PROC mismatch should point at PROC name");
-    failures += expect_u32(buffers.diagnostics[0].related_location.line, 1U, "PROTO/PROC mismatch should retain related PROTO location");
+    ), VM_PARSER_STATUS_OK, "parameterized PROTO should link to bare PROC for Phase 84 INVOKE metadata without named parameter access");
+    failures += expect_size(result.diagnostic_count, 0U, "parameterized PROTO link should not produce a Phase 81 mismatch after Phase 84 metadata support");
+    failures += expect_size(result.prototype_count, 1U, "parameterized linked prototype should be recorded");
+    failures += expect_bool(buffers.prototypes[0].has_linked_procedure, "parameterized prototype should record linked procedure metadata");
 
     return failures;
 }
@@ -2081,7 +2081,7 @@ static int test_multi_diagnostic_unsupported_feature_recovery(void) {
         "Point ENDS\n"
         ".code\n"
         "main PROC\n"
-        "    INVOKE SomeProc, 1\n"
+        "    INVOKE SomeProc, al\n"
         "    .IF eax == 0\n"
         "        mov ebx, 1\n"
         "    .ENDIF\n"
@@ -2094,7 +2094,7 @@ static int test_multi_diagnostic_unsupported_feature_recovery(void) {
     failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "multiple unsupported constructs should recover with diagnostics");
     failures += expect_size(result.diagnostic_count, 4U, "STRUCT, INVOKE-argument, .IF, and .ENDIF should produce diagnostics");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, "STRUCT diagnostic code should match");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENTS_NOT_SUPPORTED_YET, "INVOKE argument diagnostic code should match");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENT_WIDTH_UNSUPPORTED, "INVOKE argument diagnostic code should match");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[2].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_IF, ".IF diagnostic code should match");
     failures += expect_string_contains(buffers.diagnostics[0].message, "STRUCT", "first diagnostic should describe STRUCT");
     failures += expect_string_contains(buffers.diagnostics[1].message, "INVOKE", "second diagnostic should describe INVOKE");
@@ -2109,9 +2109,9 @@ static int test_multi_diagnostic_unsupported_feature_recovery(void) {
     failures += expect_u32(buffers.diagnostics[2].location.column, 5U, ".IF diagnostic column should be preserved");
     failures += expect_size(buffers.diagnostics[0].location.offset, 12U, "STRUCT diagnostic byte offset should be preserved");
     failures += expect_size(buffers.diagnostics[1].location.offset, 81U, "INVOKE argument diagnostic byte offset should be preserved");
-    failures += expect_size(buffers.diagnostics[2].location.offset, 87U, ".IF diagnostic byte offset should be preserved");
+    failures += expect_size(buffers.diagnostics[2].location.offset, 88U, ".IF diagnostic byte offset should be preserved");
     failures += expect_size(buffers.diagnostics[0].lexeme_length, 6U, "STRUCT diagnostic span length should be preserved");
-    failures += expect_size(buffers.diagnostics[1].lexeme_length, 1U, "INVOKE argument diagnostic span length should be preserved");
+    failures += expect_size(buffers.diagnostics[1].lexeme_length, 2U, "INVOKE argument diagnostic span length should be preserved");
     failures += expect_size(buffers.diagnostics[2].lexeme_length, 3U, ".IF diagnostic span length should be preserved");
     failures += expect_size(result.instruction_count, 0U, "instructions inside skipped unsupported blocks should not be emitted");
 
@@ -2190,7 +2190,7 @@ static int test_line_level_unsupported_feature_recovery_covers_required_construc
     const char *source =
         ".code\n"
         "main PROC\n"
-        "    INVOKE SomeProc, 1\n"
+        "    INVOKE SomeProc, al\n"
         "    SomeProc PROTO\n"
         "    Greeting TEXTEQU <Hello>\n"
         "    INCLUDELIB Irvine32.lib\n"
@@ -4679,7 +4679,7 @@ static int test_phase82_invoke_addr_external_routine_diagnostics(void) {
         "main ENDP\n"
         "Helper PROC\n"
         "    mov eax, 77\n"
-        "    ret\n"
+        "    ret 4\n"
         "Helper ENDP\n"
         "END main\n";
     const char *addr_argument_source =
@@ -4691,7 +4691,7 @@ static int test_phase82_invoke_addr_external_routine_diagnostics(void) {
         "main ENDP\n"
         "Helper PROC\n"
         "    mov eax, 77\n"
-        "    ret\n"
+        "    ret 4\n"
         "Helper ENDP\n"
         "END main\n";
     const char *offset_argument_source =
@@ -4703,7 +4703,7 @@ static int test_phase82_invoke_addr_external_routine_diagnostics(void) {
         "main ENDP\n"
         "Helper PROC\n"
         "    mov eax, 77\n"
-        "    ret\n"
+        "    ret 4\n"
         "Helper ENDP\n"
         "END main\n";
     const char *unknown_target_source =
@@ -4768,24 +4768,21 @@ static int test_phase82_invoke_addr_external_routine_diagnostics(void) {
     failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_INVOKE, "second line should report unsupported external INVOKE");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[2].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_INVOKE, "third line should report unsupported external INVOKE");
 
-    failures += expect_parser_status(parse_for_test(argument_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 82 INVOKE with user-procedure arguments should reject before execution");
-    failures += expect_size(result.diagnostic_count, 1U, "user-procedure INVOKE with one argument should report one diagnostic");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENTS_NOT_SUPPORTED_YET, "user-procedure INVOKE with argument should report argument deferral");
-    failures += expect_size(result.instruction_count, 3U, "rejected INVOKE argument line should not emit the helper CALL instruction");
+    failures += expect_parser_status(parse_for_test(argument_source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 84 INVOKE with one DWORD immediate argument should parse successfully when cleanup matches");
+    failures += expect_size(result.diagnostic_count, 0U, "user-procedure INVOKE with one accepted argument should not report diagnostics");
+    failures += expect_size(result.instruction_count, 5U, "accepted INVOKE argument line should emit capture, commit, and remaining procedure instructions");
+    failures += expect_u32((uint32_t)buffers.instructions[0].opcode, (uint32_t)VM_IR_OPCODE_INVOKE_CAPTURE_DWORD, "accepted INVOKE argument should emit a capture instruction");
+    failures += expect_u32((uint32_t)buffers.instructions[1].opcode, (uint32_t)VM_IR_OPCODE_INVOKE_COMMIT, "accepted INVOKE argument should emit an INVOKE commit instruction");
 
-    failures += expect_parser_status(parse_for_test(addr_argument_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 82 INVOKE with ADDR argument should remain unsupported");
-    failures += expect_size(result.diagnostic_count, 1U, "INVOKE ADDR argument should report one diagnostic");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENTS_NOT_SUPPORTED_YET, "INVOKE ADDR argument should report argument deferral, not execute ADDR");
-    failures += expect_size(buffers.diagnostics[0].location.line, 5U, "ADDR argument diagnostic should preserve line");
-    failures += expect_size(buffers.diagnostics[0].location.column, 20U, "ADDR argument diagnostic should point at ADDR token");
-    failures += expect_size(buffers.diagnostics[0].lexeme_length, 4U, "ADDR argument diagnostic span should cover ADDR");
+    failures += expect_parser_status(parse_for_test(addr_argument_source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 84 INVOKE with ADDR data argument should parse successfully when cleanup matches");
+    failures += expect_size(result.diagnostic_count, 0U, "INVOKE ADDR argument should not report diagnostics for addressable data symbols");
+    failures += expect_size(result.instruction_count, 4U, "accepted ADDR INVOKE should emit capture, commit, helper body, and RET");
+    failures += expect_u32((uint32_t)buffers.instructions[0].source.relocation, (uint32_t)VM_IR_RELOCATION_DATA, "ADDR data argument should capture a data-address relocation");
 
-    failures += expect_parser_status(parse_for_test(offset_argument_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 82 INVOKE with OFFSET argument should remain unsupported");
-    failures += expect_size(result.diagnostic_count, 1U, "INVOKE OFFSET argument should report one diagnostic");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENTS_NOT_SUPPORTED_YET, "INVOKE OFFSET argument should report argument deferral");
-    failures += expect_size(buffers.diagnostics[0].location.line, 5U, "OFFSET argument diagnostic should preserve line");
-    failures += expect_size(buffers.diagnostics[0].location.column, 20U, "OFFSET argument diagnostic should point at OFFSET token");
-    failures += expect_size(buffers.diagnostics[0].lexeme_length, 6U, "OFFSET argument diagnostic span should cover OFFSET");
+    failures += expect_parser_status(parse_for_test(offset_argument_source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 84 INVOKE with OFFSET data argument should parse successfully when cleanup matches");
+    failures += expect_size(result.diagnostic_count, 0U, "INVOKE OFFSET argument should not report diagnostics for addressable data symbols");
+    failures += expect_size(result.instruction_count, 4U, "accepted OFFSET INVOKE should emit capture, commit, helper body, and RET");
+    failures += expect_u32((uint32_t)buffers.instructions[0].source.relocation, (uint32_t)VM_IR_RELOCATION_DATA, "OFFSET data argument should capture a data-address relocation");
 
     failures += expect_parser_status(parse_for_test(unknown_target_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 82 INVOKE unknown target should reject during target resolution");
     failures += expect_size(result.diagnostic_count, 1U, "INVOKE unknown target should report one diagnostic");
@@ -4793,11 +4790,10 @@ static int test_phase82_invoke_addr_external_routine_diagnostics(void) {
     failures += expect_size(buffers.diagnostics[0].location.line, 3U, "unknown target diagnostic should preserve line");
     failures += expect_size(buffers.diagnostics[0].location.column, 12U, "unknown target diagnostic should point at target token");
 
-    failures += expect_parser_status(parse_for_test(needs_arg_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 82 INVOKE to Phase 81-incompatible parameterized PROTO/bare PROC should reject");
-    failures += expect_size(result.diagnostic_count, 1U, "NeedsArg PROTO/PROC/INVOKE fixture should report one compatibility diagnostic");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_PROTO_PROC_MISMATCH, "Phase 81 PROTO/PROC compatibility should own the NeedsArg rejection before future INVOKE argument-count support");
-    failures += expect_size(buffers.diagnostics[0].location.line, 7U, "NeedsArg mismatch diagnostic should point at bare PROC declaration");
-    failures += expect_size(buffers.diagnostics[0].related_location.line, 1U, "NeedsArg mismatch should retain related PROTO location");
+    failures += expect_parser_status(parse_for_test(needs_arg_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 84 zero-argument INVOKE to one-argument PROTO should reject by argument count");
+    failures += expect_size(result.diagnostic_count, 1U, "NeedsArg PROTO/PROC/INVOKE fixture should report one argument-count diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENT_COUNT_MISMATCH, "Phase 84 INVOKE argument-count validation should own the NeedsArg rejection");
+    failures += expect_size(buffers.diagnostics[0].location.line, 4U, "NeedsArg mismatch diagnostic should point at INVOKE target");
 
     failures += expect_parser_status(parse_for_test(accepted_source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 82 zero-argument user-procedure INVOKE should parse successfully");
     failures += expect_size(result.diagnostic_count, 0U, "accepted zero-argument INVOKE should not produce diagnostics");
@@ -4809,6 +4805,9 @@ static int test_phase82_invoke_addr_external_routine_diagnostics(void) {
     failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET), "invalid-invoke-target", "invalid INVOKE target code name should be stable");
     failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENTS_NOT_SUPPORTED_YET), "invoke-arguments-not-supported-yet", "INVOKE argument deferral code name should be stable");
     failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENT_COUNT_MISMATCH), "invoke-argument-count-mismatch", "INVOKE argument-count code name should be stable");
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE_ARGUMENT), "unsupported-invoke-argument", "unsupported INVOKE argument code name should be stable");
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENT_WIDTH_UNSUPPORTED), "invoke-argument-width-unsupported", "INVOKE argument width code name should be stable");
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVOKE_CLEANUP_MISMATCH), "invoke-cleanup-mismatch", "INVOKE cleanup code name should be stable");
     failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_INVOKE), "unsupported-external-invoke", "external INVOKE code name should be stable");
     failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE_INVOKE), "unsupported-irvine-invoke", "Irvine32 INVOKE code name should be stable");
 
@@ -8749,6 +8748,6 @@ int main(void) {
         return 1;
     }
 
-    printf("Parser tests through Phase 83 ADDR preparation coverage passed.\n");
+    printf("Parser tests through Phase 84 INVOKE DWORD argument coverage passed.\n");
     return 0;
 }

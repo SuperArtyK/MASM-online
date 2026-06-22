@@ -19,9 +19,10 @@
  * saves and restores PROC USES registers for direct CALL/RET paths. Phase 79
  * creates and releases automatic LOCAL stack frames for selected-entry and
  * direct-CALL procedure paths. Phase 80 resolves supported source-level LOCAL
- * operands against active automatic frames. ENTER, far returns, executable
- * source-level ADDR, INVOKE argument lowering, and non-exit Irvine32 routines
- * remain later milestones; Phase 69 direct user-procedure CALL
+ * operands against active automatic frames. Phase 84 captures and commits the
+ * accepted same-file user-procedure INVOKE DWORD argument subset. ENTER, far
+ * returns, general source-level ADDR outside accepted INVOKE arguments, and
+ * non-exit Irvine32 routines remain later milestones; Phase 69 direct user-procedure CALL
  * performs its internal checked return-token stack write, Phase 70 helper RET
  * performs its internal checked return-token stack read, and Phase 71 treats a
  * root-code-stream RET as successful program termination by default, and
@@ -62,6 +63,9 @@
 
 /// Maximum Phase 78 LOCAL declarations retained for one procedure.
 #define VM_EXEC_PROCEDURE_LOCAL_CAPACITY 32U
+
+/// Maximum Phase 84 DWORD INVOKE arguments captured before one INVOKE commit.
+#define VM_EXEC_INVOKE_ARGUMENT_CAPACITY 16U
 
 /// Maximum Phase 79 runtime LOCAL descriptors retained by the executor.
 #define VM_EXEC_LOCAL_DESCRIPTOR_CAPACITY VM_MAX_CALL_DEPTH_LIMIT
@@ -506,6 +510,10 @@ typedef struct Vm {
     uint32_t next_local_frame_id;
     /// Whether selected-entry automatic LOCAL frame setup has already been attempted.
     bool selected_entry_local_frame_created;
+    /// Internal Phase 84 INVOKE DWORD argument values captured before stack mutation.
+    uint32_t pending_invoke_arguments[VM_EXEC_INVOKE_ARGUMENT_CAPACITY];
+    /// Validity bits for @ref pending_invoke_arguments entries.
+    bool pending_invoke_argument_valid[VM_EXEC_INVOKE_ARGUMENT_CAPACITY];
 } Vm;
 
 /// Initializes a VM instance for the currently implemented execution subset.

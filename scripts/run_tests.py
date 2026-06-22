@@ -521,10 +521,10 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.h", "VM_PARSER_DIAGNOSTIC_UNSUPPORTED_TYPE_EXPRESSION")
     assert_text_contains("src/parser/parser.h", "VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LENGTHOF_EXPRESSION")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
-    assert_text_contains("src/parser/parser.c", "INVOKE arguments are not implemented yet; the current INVOKE subset accepts only zero-argument INVOKE")
+    assert_text_contains("src/parser/parser.c", "Phase 84 INVOKE accepts only full 32-bit register arguments")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 83 - ADDR Preparation for Future INVOKE Arguments")
-    assert_text_contains("README.md", "Phase 83 prepares limited helper-level `ADDR symbol` records")
+    assert_text_contains("README.md", "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup")
+    assert_text_contains("README.md", "Phase 84 is the current runtime/source-run behavior milestone")
     assert_text_not_contains("README.md", "parser-only `LOCAL` declaration metadata")
     assert_text_not_contains("README.md", "runtime stack-frame creation for locals")
     assert_text_contains("README.md", "callDepthLimit")
@@ -608,9 +608,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 83")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 84")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
-    assert_text_contains("web/src/protocol.js", "Phase 83 - ADDR Preparation for Future INVOKE Arguments")
+    assert_text_contains("web/src/protocol.js", "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -678,7 +678,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 83 ADDR preparation behavior passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 84 INVOKE DWORD argument behavior passed.")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "through Phase 78A limited OPTION NOKEYWORD coverage")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "Phase 78A default source-run metadata")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "numeric Phase 78 metadata")
@@ -1781,8 +1781,8 @@ def assert_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 83 - ADDR Preparation for Future INVOKE Arguments",
-            "Phase 83 prepares limited helper-level `ADDR symbol` records",
+            "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup",
+            "Phase 84 is the current runtime/source-run behavior milestone",
             "stack-overflow",
             "stack-underflow",
             "source-level 32-bit `push` for registers, immediates, and DWORD memory sources",
@@ -1850,10 +1850,10 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 83 - ADDR Preparation for Future INVOKE Arguments",
-            "Phase 83 advances runtime/source-run behavior metadata",
+            "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup",
+            "Phase 84 advances runtime/source-run behavior metadata",
             "Phase 81 limited parser-owned `PROTO` metadata",
-            "helper-level ADDR argument-record diagnostics",
+            "exact `ret imm16` cleanup validation",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
             "stale-wasm-output-contract",
@@ -1899,8 +1899,8 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Current milestone:",
-            "Phase 83 - ADDR Preparation for Future INVOKE Arguments",
-            "Phase 83 prepares limited helper-level `ADDR symbol` records",
+            "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup",
+            "Phase 84 accepts a limited same-file user-procedure `INVOKE` DWORD argument subset",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
             "Phase 79 allocates runtime stack storage for accepted LOCAL metadata",
             "selected-entry `ENDP` is not an implicit successful terminator",
@@ -1954,9 +1954,9 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 83 - ADDR Preparation for Future INVOKE Arguments",
+            "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
-            "Phase 83 - ADDR Preparation for Future INVOKE Arguments",
+            "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup",
             "phase-71e-entry-procedure-end-mode-output-contract-v1",
             "This history file records completed milestones and audit evidence.",
             "It is not the phase-order authority",
@@ -2131,14 +2131,14 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 83 - ADDR Preparation for Future INVOKE Arguments",
+            "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup",
             "Phase 79 adds tests for automatic LOCAL frame setup and release",
-            "phase-83-addr-preparation-output-contract-v1",
+            "phase-84-invoke-dword-argument-output-contract-v1",
             "local-frame-entry-unsupported",
             "invalid-frame-state",
             "stack-overflow",
             "future-owned deferral of executable source-level `ADDR`",
-            "Phase 83 regression coverage preserves Phase 82 accepted zero-argument same-file user-procedure `INVOKE`",
+            "Phase 84 regression coverage preserves Phase 83 helper-level `ADDR symbol` preparation",
         ],
     )
     testing_status = read_repo_text("docs/TESTING_GUIDE.md").split("## 1. Prerequisites", 1)[0]
@@ -2155,12 +2155,12 @@ def assert_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 83: ADDR Preparation for Future INVOKE Arguments",
+            "Milestone 84: INVOKE DWORD Argument Lowering and Cleanup",
             "INCLUDE Irvine32.inc",
             "Helper PROTO",
             "INVOKE Helper",
             "Helper PROC",
-            "mov eax, 55",
+            "mov eax, [esp + 4]",
             "ret",
             "exit",
             "final-registers",
@@ -2210,7 +2210,7 @@ def assert_current_status_and_harness_documented() -> None:
             "sourceRunOutputContract",
             "createMismatchedRuntimePhaseDiagnostic",
             "Number.isInteger(runResult.phase)",
-            "IMPLEMENTED_PHASE = 83",
+            "IMPLEMENTED_PHASE = 84",
         ],
     )
     assert_all_text_not_contains(
