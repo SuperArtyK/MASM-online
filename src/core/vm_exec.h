@@ -142,7 +142,9 @@ typedef enum VmExecStatus {
     /// Execution attempted to enter a LOCAL procedure without a supported automatic frame.
     VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED,
     /// A Phase 80 LOCAL operand executed without its owning active automatic frame.
-    VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME
+    VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME,
+    /// Program Console output would exceed the configured byte or line limit.
+    VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED
 } VmExecStatus;
 
 /// Describes the lifetime state for one Phase 79 automatic LOCAL frame or descriptor.
@@ -670,6 +672,19 @@ const VmProcedureFallthroughDiagnostic *vm_last_procedure_fallthrough_diagnostic
 /// @param vm VM instance to inspect.
 /// @return Pointer to the VM-owned Program Console, or NULL when @p vm is NULL.
 const VmConsole *vm_program_console(const Vm *vm);
+
+/// Appends simulated program output through the VM-owned Program Console.
+///
+/// Future Irvine32 output routines should use this helper so output-limit
+/// failures become executor diagnostics instead of silently mutating the
+/// console. The helper commits the complete span or no bytes at all.
+///
+/// @param vm VM instance whose Program Console receives output.
+/// @param text Bytes to append; may be NULL only when @p byte_count is zero.
+/// @param byte_count Number of bytes to append.
+/// @param instruction Optional instruction associated with a limit diagnostic.
+/// @return VM_EXEC_STATUS_OK on success, or an executor status describing failure.
+VmExecStatus vm_append_program_console_output(Vm *vm, const char *text, size_t byte_count, const VmIrInstruction *instruction);
 
 /// Releases resources owned by a VM instance.
 ///

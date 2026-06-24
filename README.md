@@ -6,9 +6,9 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 85 - Program Console Buffer and Stream Separation |
+| Current milestone | Phase 86 - Program Console Output Limits and Serialization |
 
-Phase 85 is the current runtime/source-run behavior milestone. It adds a separate Program Console stream in VM/source-run/UI infrastructure while keeping Simulator Messages as the channel for diagnostics and simulator status.
+Phase 86 is the current runtime/source-run behavior milestone. It adds deterministic Program Console byte/line limits, no-partial-append failure behavior, and limit-status serialization while keeping Simulator Messages as the channel for diagnostics and simulator status.
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -47,7 +47,7 @@ At a high level, the current subset includes:
 - procedure-entry and call-target classification metadata for parser/tests;
 - `PROC USES` parsing metadata for `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, and `EDI`, stored in declared order;
 - direct-CALL `PROC USES` runtime save/restore with checked automatic stack writes/reads, `stack-overflow` and `stack-underflow` diagnostics, listed-register preservation, modeled flag preservation, `EAX` return-value behavior when omitted, and `ESP` balance;
-- `LOCAL` declaration metadata for supported scalar, array, and comma-separated procedure-local declarations before executable instructions, automatic runtime LOCAL frames on selected-entry and direct-CALL procedure paths, supported Phase 80 LOCAL operands such as `mov temp, eax`, `mov eax, temp`, `mov BYTE PTR buf[0], 'A'`, `mov al, BYTE PTR buf[1]`, and `lea eax, temp`, limited parser-owned Phase 81 `PROTO` metadata for zero-argument and named `DWORD`/`SDWORD` prototypes, Phase 82 zero-argument `INVOKE Helper` / `invoke Helper` to same-file user procedures, Phase 83 helper-level `ADDR symbol` record preparation, and Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering with exact `ret imm16` cleanup validation, and Phase 85 separate Program Console stream infrastructure;
+- `LOCAL` declaration metadata for supported scalar, array, and comma-separated procedure-local declarations before executable instructions, automatic runtime LOCAL frames on selected-entry and direct-CALL procedure paths, supported Phase 80 LOCAL operands such as `mov temp, eax`, `mov eax, temp`, `mov BYTE PTR buf[0], 'A'`, `mov al, BYTE PTR buf[1]`, and `lea eax, temp`, limited parser-owned Phase 81 `PROTO` metadata for zero-argument and named `DWORD`/`SDWORD` prototypes, Phase 82 zero-argument `INVOKE Helper` / `invoke Helper` to same-file user procedures, Phase 83 helper-level `ADDR symbol` record preparation, and Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering with exact `ret imm16` cleanup validation, Phase 85 separate Program Console stream infrastructure, and Phase 86 Program Console output limits and serialization;
 - instruction-count watchdog behavior;
 - modeled `CF`, `ZF`, `SF`, and `OF` behavior where implemented;
 - structured diagnostics and rendered Simulator Messages;

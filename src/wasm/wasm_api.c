@@ -27,7 +27,7 @@
  * operand resolution and addressing, Phase 81 parser-owned PROTO metadata,
  * Phase 82 zero-argument user-procedure INVOKE lowering and diagnostics,
  * Phase 83 ADDR helper preparation, Phase 84 limited INVOKE DWORD argument
- * lowering and cleanup validation, Phase 85 separate Program Console stream
+ * lowering and cleanup validation, Phase 86 Program Console output-limit
  * serialization, and recovered unsupported-feature
  * diagnostics, then reports a compact JSON result for the UI.
  */
@@ -94,16 +94,19 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase reported to JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 85U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 86U
 
-/// Suffix for the current Phase 85 runtime/source-run behavior phase.
+/// Suffix for the current Phase 86 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 85 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 85 - Program Console Buffer and Stream Separation"
+/// Full name of the current Phase 86 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 86 - Program Console Output Limits and Serialization"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 85 Program Console stream separation.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-85-program-console-stream-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 86 Program Console limits and serialization.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-86-program-console-output-limits-contract-v1"
+
+/// Canonical empty Program Console JSON object for source-run fallback responses.
+#define MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON "\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0,\"maxBytes\":1048576,\"maxLines\":10000,\"limitExceeded\":false,\"limitKind\":null}"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -625,11 +628,27 @@ typedef struct Masm32SimWasmRunStorage {
     Vm vm;
 } Masm32SimWasmRunStorage;
 
+
+/// Test-facing synthetic Program Console appends applied after ordinary source execution.
+typedef struct Masm32SimWasmSyntheticConsoleOutput {
+    /// First output span expected to commit before an optional failing span.
+    const char *first_text;
+    /// Second output span used by tests to trigger deterministic output limits.
+    const char *second_text;
+    /// Test-configured Program Console byte limit.
+    uint32_t max_bytes;
+    /// Test-configured Program Console line-feed limit.
+    uint32_t max_lines;
+} Masm32SimWasmSyntheticConsoleOutput;
+
 /// Static response buffer returned to JavaScript by the source-run export.
 static char g_masm32_sim_wasm_run_json[MASM32_SIM_WASM_RUN_JSON_BYTES];
 
 /// Static parse-and-run storage reused by each single-threaded worker request.
 static Masm32SimWasmRunStorage g_masm32_sim_wasm_run_storage;
+
+/// Optional test-facing synthetic Program Console output fixture for the next source run.
+static const Masm32SimWasmSyntheticConsoleOutput *g_masm32_sim_wasm_synthetic_console_output = NULL;
 
 /// Returns whether a Phase 57F startup register/flag mode enum value is accepted.
 ///
@@ -1257,6 +1276,10 @@ static bool masm32_sim_json_append_program_console(Masm32SimJsonWriter *writer, 
     const char *text = vm_console_text(console);
     const size_t byte_count = vm_console_byte_count(console);
     const size_t line_count = vm_console_line_count(console);
+    const size_t max_bytes = vm_console_max_bytes(console);
+    const size_t max_lines = vm_console_max_lines(console);
+    const bool limit_exceeded = vm_console_limit_exceeded(console);
+    const char *limit_kind = vm_console_limit_kind_name(vm_console_limit_kind(console));
 
     if (writer == NULL) {
         return false;
@@ -1268,13 +1291,27 @@ static bool masm32_sim_json_append_program_console(Masm32SimJsonWriter *writer, 
     if (!masm32_sim_json_append_string(writer, text)) {
         return false;
     }
-    return masm32_sim_json_append(
-        writer,
-        ",\"truncated\":%s,\"byteCount\":%llu,\"lineCount\":%llu}",
-        vm_console_truncated(console) ? "true" : "false",
-        (unsigned long long)byte_count,
-        (unsigned long long)line_count
-    );
+    if (!masm32_sim_json_append(
+            writer,
+            ",\"truncated\":%s,\"byteCount\":%llu,\"lineCount\":%llu,\"maxBytes\":%llu,\"maxLines\":%llu,\"limitExceeded\":%s,\"limitKind\":",
+            vm_console_truncated(console) ? "true" : "false",
+            (unsigned long long)byte_count,
+            (unsigned long long)line_count,
+            (unsigned long long)max_bytes,
+            (unsigned long long)max_lines,
+            limit_exceeded ? "true" : "false"
+        )) {
+        return false;
+    }
+    if (limit_exceeded && limit_kind != NULL && strcmp(limit_kind, "none") != 0) {
+        if (!masm32_sim_json_append_string(writer, limit_kind)) {
+            return false;
+        }
+    } else if (!masm32_sim_json_append(writer, "null")) {
+        return false;
+    }
+
+    return masm32_sim_json_append(writer, "}");
 }
 
 /// Builds a renderable invalid Phase 71A root RET mode JSON result.
@@ -1302,7 +1339,7 @@ static const char *masm32_sim_wasm_build_invalid_root_ret_mode_json(Masm32SimWas
     (void)masm32_sim_json_append_source_run_metadata(&writer);
     (void)masm32_sim_json_append(
         &writer,
-        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"callDepthLimit\":%u,\"memoryChanges\":[],\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0},\"simulatorMessages\":[",
+        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"callDepthLimit\":%u,\"memoryChanges\":[]," MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON ",\"simulatorMessages\":[",
         (unsigned int)MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT,
         (unsigned int)MASM32_SIM_WASM_DEFAULT_CALL_DEPTH_LIMIT
     );
@@ -1316,7 +1353,7 @@ static const char *masm32_sim_wasm_build_invalid_root_ret_mode_json(Masm32SimWas
         snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"callDepthLimit\":%u,\"memoryChanges\":[],\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0},\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
+            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"callDepthLimit\":%u,\"memoryChanges\":[]," MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON ",\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
             (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER,
             MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX,
             MASM32_SIM_WASM_RUNTIME_PHASE_NAME,
@@ -1354,7 +1391,7 @@ static const char *masm32_sim_wasm_build_invalid_procedure_fallthrough_policy_js
     (void)masm32_sim_json_append_source_run_metadata(&writer);
     (void)masm32_sim_json_append(
         &writer,
-        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"callDepthLimit\":%u,\"memoryChanges\":[],\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0},\"simulatorMessages\":[",
+        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"callDepthLimit\":%u,\"memoryChanges\":[]," MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON ",\"simulatorMessages\":[",
         (unsigned int)MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT,
         (unsigned int)MASM32_SIM_WASM_DEFAULT_CALL_DEPTH_LIMIT
     );
@@ -1368,7 +1405,7 @@ static const char *masm32_sim_wasm_build_invalid_procedure_fallthrough_policy_js
         snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"callDepthLimit\":%u,\"memoryChanges\":[],\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0},\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
+            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"callDepthLimit\":%u,\"memoryChanges\":[]," MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON ",\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
             (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER,
             MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX,
             MASM32_SIM_WASM_RUNTIME_PHASE_NAME,
@@ -1406,7 +1443,7 @@ static const char *masm32_sim_wasm_build_invalid_entry_procedure_end_mode_json(M
     (void)masm32_sim_json_append_source_run_metadata(&writer);
     (void)masm32_sim_json_append(
         &writer,
-        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"callDepthLimit\":%u,\"memoryChanges\":[],\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0},\"simulatorMessages\":[",
+        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"callDepthLimit\":%u,\"memoryChanges\":[]," MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON ",\"simulatorMessages\":[",
         (unsigned int)MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT,
         (unsigned int)MASM32_SIM_WASM_DEFAULT_CALL_DEPTH_LIMIT
     );
@@ -1420,7 +1457,7 @@ static const char *masm32_sim_wasm_build_invalid_entry_procedure_end_mode_json(M
         snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"callDepthLimit\":%u,\"memoryChanges\":[],\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0},\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
+            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"callDepthLimit\":%u,\"memoryChanges\":[]," MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON ",\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
             (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER,
             MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX,
             MASM32_SIM_WASM_RUNTIME_PHASE_NAME,
@@ -1498,7 +1535,7 @@ static const char *masm32_sim_wasm_build_invalid_startup_setting_json(
     (void)masm32_sim_json_append_source_run_metadata(&writer);
     (void)masm32_sim_json_append(
         &writer,
-        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"memoryChanges\":[],\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0},\"simulatorMessages\":["
+        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"memoryChanges\":[]," MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON ",\"simulatorMessages\":["
     );
     (void)masm32_sim_json_append_message(&writer, "ui-error", "invalid-startup-setting", message, 0U, 0U);
     (void)masm32_sim_json_append(&writer, "],\"invalidSetting\":{");
@@ -1512,7 +1549,7 @@ static const char *masm32_sim_wasm_build_invalid_startup_setting_json(
         snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"memoryChanges\":[],\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0},\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
+            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"memoryChanges\":[]," MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON ",\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
             (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER,
             MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX,
             MASM32_SIM_WASM_RUNTIME_PHASE_NAME,
@@ -1549,7 +1586,7 @@ static const char *masm32_sim_wasm_build_invalid_instruction_limit_json(uint32_t
     (void)masm32_sim_json_append_source_run_metadata(&writer);
     (void)masm32_sim_json_append(
         &writer,
-        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"instructionLimit\":%u,\"callDepthLimit\":%u,\"executedInstructionCount\":0,\"attemptedNextInstructionIndex\":null,\"currentInstructionIndex\":null,\"memoryChanges\":[],\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0},\"simulatorMessages\":[",
+        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"instructionLimit\":%u,\"callDepthLimit\":%u,\"executedInstructionCount\":0,\"attemptedNextInstructionIndex\":null,\"currentInstructionIndex\":null,\"memoryChanges\":[]," MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON ",\"simulatorMessages\":[",
         (unsigned int)instruction_limit,
         (unsigned int)MASM32_SIM_WASM_DEFAULT_CALL_DEPTH_LIMIT
     );
@@ -1563,7 +1600,7 @@ static const char *masm32_sim_wasm_build_invalid_instruction_limit_json(uint32_t
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"callDepthLimit\":%u,\"executedInstructionCount\":0,\"attemptedNextInstructionIndex\":null,\"currentInstructionIndex\":null,\"memoryChanges\":[],\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0},\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
+            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"callDepthLimit\":%u,\"executedInstructionCount\":0,\"attemptedNextInstructionIndex\":null,\"currentInstructionIndex\":null,\"memoryChanges\":[]," MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON ",\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
             (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER,
             MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX,
             MASM32_SIM_WASM_RUNTIME_PHASE_NAME,
@@ -1601,7 +1638,7 @@ static const char *masm32_sim_wasm_build_invalid_call_depth_limit_json(uint32_t 
     (void)masm32_sim_json_append_source_run_metadata(&writer);
     (void)masm32_sim_json_append(
         &writer,
-        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"instructionLimit\":%u,\"callDepthLimit\":%u,\"executedInstructionCount\":0,\"attemptedNextInstructionIndex\":null,\"currentInstructionIndex\":null,\"memoryChanges\":[],\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0},\"simulatorMessages\":[",
+        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"instructionLimit\":%u,\"callDepthLimit\":%u,\"executedInstructionCount\":0,\"attemptedNextInstructionIndex\":null,\"currentInstructionIndex\":null,\"memoryChanges\":[]," MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON ",\"simulatorMessages\":[",
         (unsigned int)MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT,
         (unsigned int)call_depth_limit
     );
@@ -1615,7 +1652,7 @@ static const char *masm32_sim_wasm_build_invalid_call_depth_limit_json(uint32_t 
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"callDepthLimit\":%u,\"executedInstructionCount\":0,\"attemptedNextInstructionIndex\":null,\"currentInstructionIndex\":null,\"memoryChanges\":[],\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0},\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
+            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"callDepthLimit\":%u,\"executedInstructionCount\":0,\"attemptedNextInstructionIndex\":null,\"currentInstructionIndex\":null,\"memoryChanges\":[]," MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON ",\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
             (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER,
             MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX,
             MASM32_SIM_WASM_RUNTIME_PHASE_NAME,
@@ -7550,6 +7587,7 @@ static bool masm32_sim_json_append_exec_message(
     const Masm32SimWasmRunStorage *storage
 ) {
     const char *status_name = vm_exec_status_name(status);
+    const char *message_kind = "runtime-error";
     const char *message_code = status_name != NULL ? status_name : "execution-error";
     const char *message_text = "Execution failed while running the parsed program.";
     char memory_message[512];
@@ -7602,7 +7640,8 @@ static bool masm32_sim_json_append_exec_message(
                    status == VM_EXEC_STATUS_CODE_FELL_OFF_END ||
                    status == VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE ||
                    status == VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE ||
-                   status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED) {
+                   status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED ||
+                   status == VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED) {
             masm32_sim_wasm_copy_instruction_source_span(
                 &diagnostic->instruction,
                 g_masm32_sim_wasm_run_storage.source_text,
@@ -7674,6 +7713,10 @@ static bool masm32_sim_json_append_exec_message(
     } else if (status == VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED) {
         message_code = "local-frame-entry-unsupported";
         message_text = "The destination procedure requires an automatic LOCAL frame, but this entry path did not create one. Use selected END entry or direct CALL entry for procedures with LOCAL declarations.";
+    } else if (status == VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED) {
+        message_kind = "resource-limit-error";
+        message_code = "console-output-limit-exceeded";
+        message_text = "Program Console output would exceed the configured byte or line limit. Execution stopped before appending partial output.";
     } else if (status == VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME) {
         message_code = "local-operand-no-active-frame";
         if (diagnostic != NULL && diagnostic->has_local_name && diagnostic->has_procedure_name) {
@@ -7723,7 +7766,7 @@ static bool masm32_sim_json_append_exec_message(
 
     return masm32_sim_json_append_message_with_span_and_procedure(
         writer,
-        "runtime-error",
+        message_kind,
         message_code,
         message_text,
         line,
@@ -8058,7 +8101,12 @@ static const char *masm32_sim_wasm_build_run_json(
 
     (void)masm32_sim_json_append_source_run_metadata(&writer);
     (void)masm32_sim_json_append(&writer, ",\"ok\":%s,\"status\":", ok ? "true" : "false");
-    (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
+    (void)masm32_sim_json_append_string(
+        &writer,
+        exec_status == VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED
+            ? "resource-limit-exceeded"
+            : masm32_sim_wasm_run_outcome_name(outcome)
+    );
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
     (void)masm32_sim_json_append_instruction_limit_metadata(&writer, vm, storage);
     (void)masm32_sim_json_append(&writer, "\"rootRetMode\":");
@@ -8205,7 +8253,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"callDepthLimit\":%u,\"executedInstructionCount\":0,\"attemptedNextInstructionIndex\":null,\"currentInstructionIndex\":null,\"memoryChanges\":[],\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0},\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
+            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"callDepthLimit\":%u,\"executedInstructionCount\":0,\"attemptedNextInstructionIndex\":null,\"currentInstructionIndex\":null,\"memoryChanges\":[]," MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON ",\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
             (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER,
             MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX,
             MASM32_SIM_WASM_RUNTIME_PHASE_NAME,
@@ -8700,6 +8748,48 @@ static void masm32_sim_wasm_update_instruction_accounting(Masm32SimWasmRunStorag
     }
 }
 
+/// Applies the active test-facing synthetic Program Console output fixture.
+///
+/// This helper exists only so Phase 86 source-run tests can exercise Program
+/// Console output-limit JSON and diagnostics before any public Irvine32 output
+/// routine exists. It appends through the VM helper used by future output
+/// routines and therefore does not add source-level printing behavior.
+///
+/// @param vm VM whose Program Console receives synthetic output.
+/// @param synthetic Synthetic output fixture; NULL is a no-op.
+/// @return VM_EXEC_STATUS_OK on success, or the output-limit status when a span is rejected.
+static VmExecStatus masm32_sim_wasm_apply_synthetic_console_output(
+    Vm *vm,
+    const Masm32SimWasmSyntheticConsoleOutput *synthetic
+) {
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (synthetic == NULL) {
+        return VM_EXEC_STATUS_OK;
+    }
+    if (vm == NULL || synthetic->max_bytes == 0U || synthetic->max_lines == 0U) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (vm_console_configure_limits(&vm->program_console, (size_t)synthetic->max_bytes, (size_t)synthetic->max_lines) != VM_CONSOLE_STATUS_OK) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    if (synthetic->first_text != NULL) {
+        status = vm_append_program_console_output(vm, synthetic->first_text, strlen(synthetic->first_text), NULL);
+        if (status != VM_EXEC_STATUS_OK) {
+            return status;
+        }
+    }
+    if (synthetic->second_text != NULL) {
+        status = vm_append_program_console_output(vm, synthetic->second_text, strlen(synthetic->second_text), NULL);
+        if (status != VM_EXEC_STATUS_OK) {
+            return status;
+        }
+    }
+
+    return VM_EXEC_STATUS_OK;
+}
+
 /// Enforces the Phase 59 instruction-count limit before fetching the next instruction.
 ///
 /// @param storage Source-run storage to mutate with diagnostic metadata.
@@ -9184,6 +9274,12 @@ static const char *masm32_sim_wasm_run_source_json_internal_with_procedure_fallt
     if (exec_status == VM_EXEC_STATUS_HALTED) {
         exec_status = VM_EXEC_STATUS_OK;
     }
+    if (exec_status == VM_EXEC_STATUS_OK) {
+        exec_status = masm32_sim_wasm_apply_synthetic_console_output(
+            vm,
+            g_masm32_sim_wasm_synthetic_console_output
+        );
+    }
 
     if (exec_status != VM_EXEC_STATUS_OK) {
         const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON, startup_register_flag_mode, uninitialized_storage_visible_byte_mode);
@@ -9572,6 +9668,53 @@ static VmDiagnosticPolicyValue masm32_sim_wasm_default_const_uninitialized_stora
 MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source) {
     return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), masm32_sim_wasm_default_startup_state_notice_setting(), MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT,
         MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE, false);
+}
+
+
+/// Test-facing Phase 86 synthetic Program Console output helper.
+///
+/// @param source Null-terminated source text to execute first.
+/// @param first_output Optional first output span to commit.
+/// @param second_output Optional second output span to append after @p first_output.
+/// @param max_bytes Positive synthetic byte limit.
+/// @param max_lines Positive synthetic line-feed limit.
+/// @return Pointer to static JSON result storage.
+MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_synthetic_console_output(
+    const char *source,
+    const char *first_output,
+    const char *second_output,
+    uint32_t max_bytes,
+    uint32_t max_lines
+) {
+    const char *json = NULL;
+    Masm32SimWasmSyntheticConsoleOutput synthetic;
+
+    if (max_bytes == 0U || max_lines == 0U) {
+        return masm32_sim_wasm_build_run_json(
+            MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT,
+            NULL,
+            NULL,
+            NULL,
+            VM_EXEC_STATUS_INVALID_ARGUMENT,
+            NULL,
+            NULL,
+            NULL,
+            false,
+            false,
+            MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+            MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO
+        );
+    }
+
+    synthetic.first_text = first_output;
+    synthetic.second_text = second_output;
+    synthetic.max_bytes = max_bytes;
+    synthetic.max_lines = max_lines;
+
+    g_masm32_sim_wasm_synthetic_console_output = &synthetic;
+    json = masm32_sim_wasm_run_source_json(source);
+    g_masm32_sim_wasm_synthetic_console_output = NULL;
+    return json;
 }
 
 MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_instruction_limit(

@@ -299,6 +299,14 @@ static void vm_exec_set_memory_diagnostic(
     }
 }
 
+/// Records a Program Console output-limit diagnostic.
+///
+/// @param vm VM whose diagnostic should be updated.
+/// @param instruction Optional instruction associated with the rejected append.
+static void vm_exec_set_console_output_limit_diagnostic(Vm *vm, const VmIrInstruction *instruction) {
+    vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED, instruction);
+}
+
 /// Records structured Phase 72 call-depth diagnostic metadata.
 ///
 /// @param vm VM whose diagnostic should be updated.
@@ -5386,6 +5394,29 @@ const VmConsole *vm_program_console(const Vm *vm) {
     return vm != NULL ? &vm->program_console : NULL;
 }
 
+VmExecStatus vm_append_program_console_output(Vm *vm, const char *text, size_t byte_count, const VmIrInstruction *instruction) {
+    VmConsoleStatus console_status = VM_CONSOLE_STATUS_OK;
+
+    if (vm == NULL || (text == NULL && byte_count > 0U)) {
+        if (vm != NULL) {
+            vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, instruction);
+        }
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    console_status = vm_console_append(&vm->program_console, text, byte_count);
+    if (console_status == VM_CONSOLE_STATUS_OK) {
+        return VM_EXEC_STATUS_OK;
+    }
+    if (console_status == VM_CONSOLE_STATUS_OUTPUT_LIMIT_EXCEEDED) {
+        vm_exec_set_console_output_limit_diagnostic(vm, instruction);
+        return VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED;
+    }
+
+    vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, instruction);
+    return VM_EXEC_STATUS_INVALID_ARGUMENT;
+}
+
 void vm_deinit(Vm *vm) {
     if (vm == NULL) {
         return;
@@ -5792,6 +5823,8 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "local-frame-entry-unsupported";
         case VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME:
             return "local-operand-no-active-frame";
+        case VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED:
+            return "console-output-limit-exceeded";
         default:
             return NULL;
     }

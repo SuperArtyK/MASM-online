@@ -18,23 +18,31 @@ Recent milestone detail in this file may be listed most-recent-first for handoff
 The canonical implementation order, phase numbering, phase tasks, required tests, and acceptance criteria remain in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Future assistants must not infer phase dependencies or next implementation work from the order of recent-history paragraphs in this file when the guide states a different order.
 
 Latest recorded completed milestone in this history file:
-Phase 85 - Program Console Buffer and Stream Separation
+Phase 86 - Program Console Output Limits and Serialization
 
 Latest recorded runtime/source-run MASM behavior phase in this history file:
-Phase 85 - Program Console Buffer and Stream Separation
+Phase 86 - Program Console Output Limits and Serialization
 
 This history file records completed milestones and audit evidence. It is not the phase-order authority and not a replacement for `docs/FULL_IMPLEMENTATION_SPEC.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, `docs/SUPPORTED_SYNTAX.md`, current repository code, or current tests. If this history file is not updated during a later milestone, its `latest recorded` lines may be older than the active repository state. Use the implementation guide and latest accepted milestone evidence to determine the next canonical implementation phase.
 
-Forward-looking phase navigation is guide-owned. At the time this history entry was updated, Phase 85 had been implemented as separate Program Console stream infrastructure while preserving Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering, Phase 83 helper-level ADDR preparation, and Phase 82 zero-argument `INVOKE` behavior. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
+Forward-looking phase navigation is guide-owned. At the time this history entry was updated, Phase 86 had been implemented as Program Console output-limit and serialization infrastructure while preserving Phase 85 separate Program Console stream infrastructure, Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering, Phase 83 helper-level ADDR preparation, and Phase 82 zero-argument `INVOKE` behavior. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
 
 Corrective artifact-evidence note for Phase 71B: the latest Phase 71B repository archive's checked-in `web/dist/masm32_sim_core.wasm` contains `phase-71b-source-run-output-contract-v1`. This corrects the stale artifact-token warning preserved in `docs/history/reports/Milestone 71B report.md`, which stated that the checked-in Wasm still contained the earlier Phase 71A output-contract token. The historical report should remain period evidence unless the project owner explicitly requests historical report correction, but future audits should treat the archive's artifact-content scan as the stronger evidence for the checked-in Wasm token.
+
+## Phase 86 - Program Console Output Limits and Serialization
+
+Phase 86 adds deterministic Program Console output limits. The VM-owned console now has named default byte and line limits, tracks committed byte and line-feed counts, defines newline counting as committed `\n` bytes only, and rejects any append that would exceed a configured limit before copying partial output. CRLF therefore counts as one line, standalone `\r` counts as zero lines, and failed appends preserve the already committed Program Console text and counts.
+
+Source-run JSON now serializes Program Console limit status with `maxBytes`, `maxLines`, `limitExceeded`, and `limitKind` fields while preserving the Phase 85 `text`, `truncated`, `byteCount`, and `lineCount` fields. The default Phase 86 policy is stop-on-limit, not truncate-on-limit, so `truncated` remains false unless a later documented truncation mode is implemented. Output-limit failures report the structured Simulator Messages diagnostic `[resource-limit-error] console-output-limit-exceeded` and keep diagnostic text out of Program Console.
+
+Phase 86 does not implement Irvine32 output routines, source-level printing syntax, input routines, Irvine32 CALL/INVOKE dispatch, macro output routines, WinAPI behavior, PE loading, linking, host console I/O, or filesystem behavior. Those remain future-owned or permanent non-goals according to the canonical specification and guide.
 
 
 ## Phase 85 - Program Console Buffer and Stream Separation
 
 Phase 85 adds a separate Program Console stream to VM/source-run/UI infrastructure. Source-run JSON now exposes `programConsole` separately from `simulatorMessages`, with empty Program Console output for current successful no-output programs and for parse/runtime diagnostic paths. The VM clears Program Console state on new program load/reset and preserves it across ordinary stepping until reset or rerun. Diagnostics and simulator status remain Simulator Messages and are not appended to Program Console.
 
-Phase 85 does not implement Irvine32 output routines, Program Console limits, input routines, Irvine32 CALL/INVOKE dispatch, macro output routines, WinAPI behavior, PE loading, linking, host console I/O, or filesystem behavior. Those remain future-owned or permanent non-goals according to the canonical specification and guide.
+At the end of Phase 85, Irvine32 output routines, Program Console limits, input routines, Irvine32 CALL/INVOKE dispatch, macro output routines, WinAPI behavior, PE loading, linking, host console I/O, and filesystem behavior were still unimplemented. Phase 86 later implemented Program Console output limits only; the other listed behaviors remain future-owned or permanent non-goals according to the canonical specification and guide.
 
 ## Phase 84 - INVOKE DWORD Argument Lowering and Cleanup
 

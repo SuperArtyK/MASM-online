@@ -2,9 +2,9 @@
 
 Current milestone:
 
-- Phase 85 - Program Console Buffer and Stream Separation
+- Phase 86 - Program Console Output Limits and Serialization
 
-This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 85 adds a separate Program Console stream to VM/source-run/UI infrastructure while keeping diagnostics and simulator status in Simulator Messages. Phase 84 accepts a limited same-file user-procedure `INVOKE` DWORD argument subset, lowers accepted arguments to checked stack slots, and validates exact `ret imm16` cleanup metadata before execution. Phase 83 helper-level `ADDR symbol` preparation, Phase 82 executable zero-argument `INVOKE Helper` / `invoke Helper`, Phase 81 limited parser-owned `PROTO` metadata for same-file educational procedure prototypes, Phase 80 source-level LOCAL operand resolution/addressing, Phase 79 automatic LOCAL frames, Phase 78A limited `OPTION NOKEYWORD` forms, Phase 78 LOCAL parser metadata, Phase 77 direct-CALL `PROC USES` runtime save/restore, Phase 76 `PROC USES` parsing metadata, and Phase 75 targeted `PROC` diagnostics remain implemented.
+This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 86 adds deterministic Program Console byte/line limits and limit-status serialization while keeping diagnostics and simulator status in Simulator Messages. Phase 85 adds a separate Program Console stream to VM/source-run/UI infrastructure. Phase 84 accepts a limited same-file user-procedure `INVOKE` DWORD argument subset, lowers accepted arguments to checked stack slots, and validates exact `ret imm16` cleanup metadata before execution. Phase 83 helper-level `ADDR symbol` preparation, Phase 82 executable zero-argument `INVOKE Helper` / `invoke Helper`, Phase 81 limited parser-owned `PROTO` metadata for same-file educational procedure prototypes, Phase 80 source-level LOCAL operand resolution/addressing, Phase 79 automatic LOCAL frames, Phase 78A limited `OPTION NOKEYWORD` forms, Phase 78 LOCAL parser metadata, Phase 77 direct-CALL `PROC USES` runtime save/restore, Phase 76 `PROC USES` parsing metadata, and Phase 75 targeted `PROC` diagnostics remain implemented.
 
 Current direct control-transfer support includes direct `jmp label`, equality conditional jumps, signed relational conditional jumps, unsigned relational conditional jumps, direct near user-procedure `call ProcedureName`, plain near `ret`/`RET` with no operands, and near `ret imm16`/`RET imm16`.
 
@@ -91,6 +91,7 @@ Implemented and planned fallthrough diagnostics and settings:
 | `callDepthLimit` | 72 implemented | default `64`; accepted `1..4096` | Resource limit for committed direct user-procedure `CALL` frames that have not yet returned through a successfully validated ordinary helper `RET`. |
 | `invalid-call-depth-limit` | 72 implemented | settings error | Invalid `callDepthLimit` value rejected before source execution. |
 | `call-depth-exceeded` | 72 implemented | resource-limit-error | Direct user-procedure `CALL` rejected before mutation because the attempted call depth would exceed `callDepthLimit`. |
+| `console-output-limit-exceeded` | 86 implemented | resource-limit-error | Program Console output append rejected before mutation because the complete append would exceed the configured Program Console byte or line limit. |
 
 The implemented `code-fell-off-end` text is:
 
@@ -176,6 +177,8 @@ Protected words such as all registers, register aliases, `EIP`, implemented inst
 ### Execution limits
 
 Source-run and test-facing callers may set `instructionLimit` to a positive integer. When omitted, the default limit is 1,000,000 executed VM instructions. The simulator counts completed VM instructions, not source lines or labels. If the limit has been reached and another instruction would be fetched, execution stops before that next instruction, emits `instruction-limit-exceeded`, preserves state from completed instructions, and omits `execution-complete`. This is the watchdog used for direct-JMP loops after Phase 61. Active-time watchdog behavior is separate future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
+
+Program Console output has deterministic Phase 86 byte and line-feed limits. The default source-run JSON exposes `maxBytes`, `maxLines`, `limitExceeded`, and `limitKind` beside the committed `text`, `truncated`, `byteCount`, and `lineCount` fields. Line counting is byte-oriented: committed `\n` bytes count as lines, CRLF counts as one line, standalone `\r` counts as zero lines, and an unterminated final text fragment does not add a line. When the complete append would exceed either configured limit, execution stops with `console-output-limit-exceeded`, the failed append contributes no partial Program Console text, and the diagnostic is emitted through Simulator Messages rather than Program Console. Current public MASM source still has no Irvine32 output routine behavior; Phase 86 tests this infrastructure with a synthetic source-run harness only.
 
 ### Parser and source-run capacity limits
 

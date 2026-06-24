@@ -185,6 +185,26 @@ const char *masm32_sim_wasm_run_source_json_with_instruction_limit(
     uint32_t instruction_limit
 );
 
+/// Parses and executes source, then applies test-only synthetic Program Console output.
+///
+/// This helper is restricted to native tests for Phase 86 Program Console
+/// output-limit serialization. It does not expose source-level printing syntax
+/// and should not be used by browser UI code.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param first_output Optional first synthetic output span to commit.
+/// @param second_output Optional second synthetic output span, often used to trigger a limit.
+/// @param max_bytes Positive Program Console byte limit for this synthetic run.
+/// @param max_lines Positive Program Console line-feed limit for this synthetic run.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_synthetic_console_output(
+    const char *source,
+    const char *first_output,
+    const char *second_output,
+    uint32_t max_bytes,
+    uint32_t max_lines
+);
+
 /// Parses and executes source using diagnostics, startup settings, and an instruction limit.
 ///
 /// This Phase 59 browser/test-facing export extends the Phase 57G settings

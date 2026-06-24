@@ -18,14 +18,18 @@ const workerRuntime = {};
 /**
  * Creates an empty Program Console payload for source-run-style worker errors.
  *
- * @returns {{text: string, truncated: boolean, byteCount: number, lineCount: number}} Empty Program Console stream.
+ * @returns {{text: string, truncated: boolean, byteCount: number, lineCount: number, maxBytes: number, maxLines: number, limitExceeded: boolean, limitKind: string | null}} Empty Program Console stream.
  */
 function createEmptyProgramConsole() {
   return {
     text: "",
     truncated: false,
     byteCount: 0,
-    lineCount: 0
+    lineCount: 0,
+    maxBytes: 1048576,
+    maxLines: 10000,
+    limitExceeded: false,
+    limitKind: null
   };
 }
 

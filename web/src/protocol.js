@@ -16,16 +16,16 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 /** @typedef {{runSource?: (source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown}} WorkerRuntime */
 
 /** Latest numeric MASM source-run phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE = 85;
+export const IMPLEMENTED_PHASE = 86;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
 export const IMPLEMENTED_PHASE_SUFFIX = "";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 85 - Program Console Buffer and Stream Separation";
+export const IMPLEMENTED_PHASE_NAME = "Phase 86 - Program Console Output Limits and Serialization";
 
 /** Source-run JSON output-contract identifier expected by the current browser/protocol layer. */
-export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-85-program-console-stream-output-contract-v1";
+export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-86-program-console-output-limits-contract-v1";
 
 /**
  * Creates the initial worker readiness response.
@@ -97,14 +97,18 @@ function createRunSourceUnavailableError() {
 /**
  * Creates an empty Program Console payload for source-run-style UI errors.
  *
- * @returns {{text: string, truncated: boolean, byteCount: number, lineCount: number}} Empty Program Console stream.
+ * @returns {{text: string, truncated: boolean, byteCount: number, lineCount: number, maxBytes: number, maxLines: number, limitExceeded: boolean, limitKind: string | null}} Empty Program Console stream.
  */
 function createEmptyProgramConsole() {
   return {
     text: "",
     truncated: false,
     byteCount: 0,
-    lineCount: 0
+    lineCount: 0,
+    maxBytes: 1048576,
+    maxLines: 10000,
+    limitExceeded: false,
+    limitKind: null
   };
 }
 
