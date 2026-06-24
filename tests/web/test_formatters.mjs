@@ -12,6 +12,7 @@ import {
   formatIntegerDisplay,
   formatMemoryChangeLine,
   formatMemoryChanges,
+  formatProgramConsole,
   formatRegisterLine,
   formatRegisters,
   formatSimulatorMessages
@@ -734,3 +735,11 @@ test("keeps legacy memory display when memory width is unavailable", () => {
     "  new | FFh / 255"
   ].join("\n"));
 });
+test("formats Program Console independently from Simulator Messages", () => {
+  assert.equal(formatProgramConsole({ text: "Hello\nWorld", truncated: false, byteCount: 11, lineCount: 1 }), "Hello\nWorld");
+  assert.equal(formatProgramConsole({ text: "", truncated: false, byteCount: 0, lineCount: 0 }), "");
+  assert.equal(formatProgramConsole(undefined), "");
+  assert.equal(formatProgramConsole({ simulatorMessages: [{ code: "execution-complete" }] }), "");
+});
+
+

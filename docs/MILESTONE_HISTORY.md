@@ -18,16 +18,23 @@ Recent milestone detail in this file may be listed most-recent-first for handoff
 The canonical implementation order, phase numbering, phase tasks, required tests, and acceptance criteria remain in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Future assistants must not infer phase dependencies or next implementation work from the order of recent-history paragraphs in this file when the guide states a different order.
 
 Latest recorded completed milestone in this history file:
-Phase 84 - INVOKE DWORD Argument Lowering and Cleanup
+Phase 85 - Program Console Buffer and Stream Separation
 
 Latest recorded runtime/source-run MASM behavior phase in this history file:
-Phase 84 - INVOKE DWORD Argument Lowering and Cleanup
+Phase 85 - Program Console Buffer and Stream Separation
 
 This history file records completed milestones and audit evidence. It is not the phase-order authority and not a replacement for `docs/FULL_IMPLEMENTATION_SPEC.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, `docs/SUPPORTED_SYNTAX.md`, current repository code, or current tests. If this history file is not updated during a later milestone, its `latest recorded` lines may be older than the active repository state. Use the implementation guide and latest accepted milestone evidence to determine the next canonical implementation phase.
 
-Forward-looking phase navigation is guide-owned. At the time this history entry was updated, Phase 84 had been implemented as limited same-file user-procedure `INVOKE` DWORD argument lowering with exact `ret imm16` cleanup validation while preserving Phase 83 helper-level ADDR preparation and Phase 82 zero-argument `INVOKE` behavior. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
+Forward-looking phase navigation is guide-owned. At the time this history entry was updated, Phase 85 had been implemented as separate Program Console stream infrastructure while preserving Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering, Phase 83 helper-level ADDR preparation, and Phase 82 zero-argument `INVOKE` behavior. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
 
 Corrective artifact-evidence note for Phase 71B: the latest Phase 71B repository archive's checked-in `web/dist/masm32_sim_core.wasm` contains `phase-71b-source-run-output-contract-v1`. This corrects the stale artifact-token warning preserved in `docs/history/reports/Milestone 71B report.md`, which stated that the checked-in Wasm still contained the earlier Phase 71A output-contract token. The historical report should remain period evidence unless the project owner explicitly requests historical report correction, but future audits should treat the archive's artifact-content scan as the stronger evidence for the checked-in Wasm token.
+
+
+## Phase 85 - Program Console Buffer and Stream Separation
+
+Phase 85 adds a separate Program Console stream to VM/source-run/UI infrastructure. Source-run JSON now exposes `programConsole` separately from `simulatorMessages`, with empty Program Console output for current successful no-output programs and for parse/runtime diagnostic paths. The VM clears Program Console state on new program load/reset and preserves it across ordinary stepping until reset or rerun. Diagnostics and simulator status remain Simulator Messages and are not appended to Program Console.
+
+Phase 85 does not implement Irvine32 output routines, Program Console limits, input routines, Irvine32 CALL/INVOKE dispatch, macro output routines, WinAPI behavior, PE loading, linking, host console I/O, or filesystem behavior. Those remain future-owned or permanent non-goals according to the canonical specification and guide.
 
 ## Phase 84 - INVOKE DWORD Argument Lowering and Cleanup
 

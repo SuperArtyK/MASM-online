@@ -275,6 +275,8 @@ def run_structure_tests() -> None:
         "src/core/vm_cpu.h",
         "src/core/vm_memory.c",
         "src/core/vm_memory.h",
+        "src/core/vm_console.c",
+        "src/core/vm_console.h",
         "src/core/vm_layout.c",
         "src/core/vm_layout.h",
         "src/core/vm_ir.c",
@@ -308,6 +310,7 @@ def run_structure_tests() -> None:
         "tests/core/test_vm_cpu.c",
         "tests/core/test_vm_flags.c",
         "tests/core/test_vm_memory.c",
+        "tests/core/test_vm_console.c",
         "tests/core/test_vm_layout.c",
         "tests/core/test_diagnostic_policy.c",
         "tests/core/test_vm_exec.c",
@@ -331,6 +334,7 @@ def run_structure_tests() -> None:
     assert_text_contains("scripts/build_wasm.sh", "wasm_api.c")
     assert_text_contains("scripts/build_wasm.sh", "vm_cpu.c")
     assert_text_contains("scripts/build_wasm.sh", "vm_memory.c")
+    assert_text_contains("scripts/build_wasm.sh", "vm_console.c")
     assert_text_contains("scripts/build_wasm.sh", "vm_layout.c")
     assert_text_contains("scripts/build_wasm.sh", "vm_ir.c")
     assert_text_contains("scripts/build_wasm.sh", "vm_exec.c")
@@ -354,6 +358,7 @@ def run_structure_tests() -> None:
     assert_text_contains("scripts/windows/build_wasm.cmd", "wasm_api.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "vm_cpu.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "vm_memory.c")
+    assert_text_contains("scripts/windows/build_wasm.cmd", "vm_console.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "vm_layout.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "vm_ir.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "vm_exec.c")
@@ -405,7 +410,7 @@ def run_structure_tests() -> None:
     assert_text_contains("web/index.html", "memory-changes")
     assert_text_contains('web/src/main.js', 'new URL("./worker.js", import.meta.url)')
     assert_text_contains("web/src/main.js", "Worker failed to load or crashed before reporting a structured error.")
-    assert_text_order("web/index.html", "Simulator Messages", "Program Console")
+    assert_text_order("web/index.html", "id=\"simulator-messages\"", "id=\"program-console\"")
     assert_text_not_contains("src/core/masm32_sim_api.h", "__cplusplus")
     assert_text_not_contains("src/wasm/wasm_api.h", "__cplusplus")
     assert_text_not_contains("src/core/vm_cpu.h", "__cplusplus")
@@ -523,8 +528,8 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "Phase 84 INVOKE accepts only full 32-bit register arguments")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup")
-    assert_text_contains("README.md", "Phase 84 is the current runtime/source-run behavior milestone")
+    assert_text_contains("README.md", "Phase 85 - Program Console Buffer and Stream Separation")
+    assert_text_contains("README.md", "Phase 85 is the current runtime/source-run behavior milestone")
     assert_text_not_contains("README.md", "parser-only `LOCAL` declaration metadata")
     assert_text_not_contains("README.md", "runtime stack-frame creation for locals")
     assert_text_contains("README.md", "callDepthLimit")
@@ -608,9 +613,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 84")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 85")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
-    assert_text_contains("web/src/protocol.js", "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup")
+    assert_text_contains("web/src/protocol.js", "Phase 85 - Program Console Buffer and Stream Separation")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -678,7 +683,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 84 INVOKE DWORD argument behavior passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 85 Program Console stream separation passed.")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "through Phase 78A limited OPTION NOKEYWORD coverage")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "Phase 78A default source-run metadata")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "numeric Phase 78 metadata")
@@ -841,6 +846,7 @@ def run_native_parser_tests() -> None:
             "tests/core/test_parser.c",
             "src/core/vm_cpu.c",
             "src/core/vm_memory.c",
+            "src/core/vm_console.c",
             "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
@@ -865,6 +871,7 @@ def run_native_exec_tests() -> None:
             "src/core/masm32_sim_api.c",
             "src/core/vm_cpu.c",
             "src/core/vm_memory.c",
+            "src/core/vm_console.c",
             "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
@@ -893,6 +900,19 @@ def run_native_exec_tests() -> None:
         ],
         subgroup=subgroup,
     )
+    compile_and_run_c_test(
+        "test_vm_console",
+        [
+            "tests/core/test_vm_console.c",
+            "src/core/vm_cpu.c",
+            "src/core/vm_memory.c",
+            "src/core/vm_console.c",
+            "src/core/vm_layout.c",
+            "src/core/vm_ir.c",
+            "src/core/vm_exec.c",
+        ],
+        subgroup=subgroup,
+    )
 
 
 def run_native_memory_layout_tests() -> None:
@@ -904,6 +924,7 @@ def run_native_memory_layout_tests() -> None:
         [
             "tests/core/test_vm_memory.c",
             "src/core/vm_memory.c",
+            "src/core/vm_console.c",
             "src/core/vm_layout.c",
         ],
         subgroup=subgroup,
@@ -914,6 +935,7 @@ def run_native_memory_layout_tests() -> None:
             "tests/core/test_vm_layout.c",
             "src/core/vm_cpu.c",
             "src/core/vm_memory.c",
+            "src/core/vm_console.c",
             "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
@@ -927,6 +949,7 @@ def run_native_memory_layout_tests() -> None:
             "src/core/masm32_sim_api.c",
             "src/core/vm_cpu.c",
             "src/core/vm_memory.c",
+            "src/core/vm_console.c",
             "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
@@ -946,6 +969,7 @@ def run_native_memory_layout_tests() -> None:
             "src/core/masm32_sim_api.c",
             "src/core/vm_cpu.c",
             "src/core/vm_memory.c",
+            "src/core/vm_console.c",
             "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
@@ -985,6 +1009,7 @@ def run_native_control_flow_tests() -> None:
             "src/core/masm32_sim_api.c",
             "src/core/vm_cpu.c",
             "src/core/vm_memory.c",
+            "src/core/vm_console.c",
             "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
@@ -1017,6 +1042,7 @@ def source_run_test_sources() -> list[str]:
         "src/core/masm32_sim_api.c",
         "src/core/vm_cpu.c",
         "src/core/vm_memory.c",
+        "src/core/vm_console.c",
         "src/core/vm_layout.c",
         "src/core/vm_ir.c",
         "src/core/vm_exec.c",
@@ -1077,6 +1103,7 @@ def build_diagnostic_json_producer() -> None:
             "src/core/masm32_sim_api.c",
             "src/core/vm_cpu.c",
             "src/core/vm_memory.c",
+            "src/core/vm_console.c",
             "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
@@ -1781,8 +1808,8 @@ def assert_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup",
-            "Phase 84 is the current runtime/source-run behavior milestone",
+            "Phase 85 - Program Console Buffer and Stream Separation",
+            "Phase 85 is the current runtime/source-run behavior milestone",
             "stack-overflow",
             "stack-underflow",
             "source-level 32-bit `push` for registers, immediates, and DWORD memory sources",
@@ -1850,8 +1877,8 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup",
-            "Phase 84 advances runtime/source-run behavior metadata",
+            "Phase 85 - Program Console Buffer and Stream Separation",
+            "Phase 85 advances runtime/source-run behavior metadata",
             "Phase 81 limited parser-owned `PROTO` metadata",
             "exact `ret imm16` cleanup validation",
             "Artifact verification versus rebuild verification",
@@ -1899,8 +1926,8 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Current milestone:",
-            "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup",
-            "Phase 84 accepts a limited same-file user-procedure `INVOKE` DWORD argument subset",
+            "Phase 85 - Program Console Buffer and Stream Separation",
+            "Phase 85 adds a separate Program Console stream",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
             "Phase 79 allocates runtime stack storage for accepted LOCAL metadata",
             "selected-entry `ENDP` is not an implicit successful terminator",
@@ -1954,9 +1981,9 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup",
+            "Phase 85 - Program Console Buffer and Stream Separation",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
-            "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup",
+            "Phase 85 - Program Console Buffer and Stream Separation",
             "phase-71e-entry-procedure-end-mode-output-contract-v1",
             "This history file records completed milestones and audit evidence.",
             "It is not the phase-order authority",
@@ -2131,14 +2158,14 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup",
+            "Phase 85 - Program Console Buffer and Stream Separation",
             "Phase 79 adds tests for automatic LOCAL frame setup and release",
-            "phase-84-invoke-dword-argument-output-contract-v1",
+            "phase-85-program-console-stream-output-contract-v1",
             "local-frame-entry-unsupported",
             "invalid-frame-state",
             "stack-overflow",
             "future-owned deferral of executable source-level `ADDR`",
-            "Phase 84 regression coverage preserves Phase 83 helper-level `ADDR symbol` preparation",
+            "Phase 85 regression coverage verifies separate Program Console and Simulator Messages streams",
         ],
     )
     testing_status = read_repo_text("docs/TESTING_GUIDE.md").split("## 1. Prerequisites", 1)[0]
@@ -2155,14 +2182,9 @@ def assert_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 84: INVOKE DWORD Argument Lowering and Cleanup",
+            "Milestone 85: Program Console Buffer and Stream Separation",
             "INCLUDE Irvine32.inc",
-            "Helper PROTO",
-            "INVOKE Helper",
-            "Helper PROC",
-            "mov eax, [esp + 4]",
-            "ret",
-            "exit",
+                                                                        "exit",
             "final-registers",
             "Program Console",
         ],
@@ -2210,7 +2232,7 @@ def assert_current_status_and_harness_documented() -> None:
             "sourceRunOutputContract",
             "createMismatchedRuntimePhaseDiagnostic",
             "Number.isInteger(runResult.phase)",
-            "IMPLEMENTED_PHASE = 84",
+            "IMPLEMENTED_PHASE = 85",
         ],
     )
     assert_all_text_not_contains(

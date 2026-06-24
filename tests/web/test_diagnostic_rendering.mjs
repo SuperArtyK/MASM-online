@@ -396,13 +396,13 @@ test("Phase 70A renders stale runtime artifact warning exactly", () => {
     {
       kind: "internal-simulator-error",
       code: "stale-wasm-artifact",
-      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 84 - INVOKE DWORD Argument Lowering and Cleanup. Rebuild web/dist with the Emscripten build script."
+      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 85 - Program Console Buffer and Stream Separation. Rebuild web/dist with the Emscripten build script."
     }
   ]);
 
   assert.equal(
     rendered,
-    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 84 - INVOKE DWORD Argument Lowering and Cleanup. Rebuild web/dist with the Emscripten build script."
+    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 85 - Program Console Buffer and Stream Separation. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -630,6 +630,22 @@ function assertNoPhase71bForbiddenDiagnosticWording(name, rawJson, rendered) {
       `${name} rendered Simulator Messages must not contain milestone-relative diagnostic wording: ${fragment}`
     );
   }
+}
+
+
+/**
+ * Asserts that a source-run result carries the Phase 85 empty Program Console payload.
+ *
+ * @param {object} json Parsed source-run JSON.
+ * @returns {void}
+ */
+function assertEmptyProgramConsole(json) {
+  assert.deepEqual(json.programConsole, {
+    text: "",
+    truncated: false,
+    byteCount: 0,
+    lineCount: 0
+  });
 }
 
 /**
@@ -2577,7 +2593,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2620,7 +2636,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "5" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.instructionCount, 5);
   assert.equal(json.instructionLimit, 5);
   assert.equal(json.executedInstructionCount, 5);
@@ -2657,9 +2673,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2685,7 +2701,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -2712,7 +2728,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2737,7 +2753,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2761,7 +2777,7 @@ END loop
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2787,7 +2803,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
   assertNoMessageWithCode(json.simulatorMessages, "unsupported-option");
   assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
@@ -2804,7 +2820,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2831,7 +2847,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2858,7 +2874,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2885,7 +2901,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2917,7 +2933,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.attemptedNextInstructionIndex, null);
@@ -2948,8 +2964,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 84);
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phase, 85);
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2994,8 +3010,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 84);
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phase, 85);
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assert.equal(json.instructionCount, 5);
   assert.equal(json.executedInstructionCount, 5);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -3021,7 +3037,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3045,7 +3061,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3069,7 +3085,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3094,7 +3110,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3118,7 +3134,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3142,7 +3158,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3167,9 +3183,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3195,9 +3211,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3223,9 +3239,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3250,9 +3266,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3278,7 +3294,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3303,7 +3319,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3327,7 +3343,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "expected-operand",
@@ -3544,7 +3560,7 @@ END main
   for (const item of cases) {
     const { json, rawJson, rendered } = runFixture(item.name, item.source);
     assertRunStatus(json, false, "parse-error");
-    assert.equal(json.phase, 84);
+    assert.equal(json.phase, 85);
     assertMessageEquals(json.simulatorMessages[0], item.expected);
     assertNoExecutionComplete(json.simulatorMessages);
     assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
@@ -3557,7 +3573,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 84);
+  assert.equal(duplicateResult.json.phase, 85);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -4274,7 +4290,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -4295,7 +4311,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -5733,9 +5749,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5795,9 +5811,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5855,9 +5871,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "error"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5892,9 +5908,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assert.equal(json.instructionCount, 2);
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.currentInstructionIndex, 1);
@@ -5943,9 +5959,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assert.equal(json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
@@ -5984,9 +6000,9 @@ END main
 
   const defaultResult = runFixture("phase71fExitTerminatesBeforeFallthroughDefault", source);
   assertRunStatus(defaultResult.json, true, "ok");
-  assert.equal(defaultResult.json.phase, 84);
+  assert.equal(defaultResult.json.phase, 85);
   assert.equal(defaultResult.json.phaseSuffix, "");
-  assert.equal(defaultResult.json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(defaultResult.json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assert.equal(defaultResult.json.entryProcedureEndMode, "code-stream");
   assert.equal(defaultResult.json.instructionCount, 2);
   assert.equal(defaultResult.json.executedInstructionCount, 2);
@@ -6006,9 +6022,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(stopResult.json, true, "ok");
-  assert.equal(stopResult.json.phase, 84);
+  assert.equal(stopResult.json.phase, 85);
   assert.equal(stopResult.json.phaseSuffix, "");
-  assert.equal(stopResult.json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(stopResult.json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assert.equal(stopResult.json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(stopResult.json.instructionCount, 2);
   assert.equal(stopResult.json.executedInstructionCount, 2);
@@ -6048,7 +6064,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "1" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.callDepthLimit, 1);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -6084,7 +6100,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "0" });
   assertRunStatus(json, false, "invalid-argument");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.callDepthLimit, 0);
   assert.deepEqual(json.memoryChanges, []);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -6111,9 +6127,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -6145,9 +6161,9 @@ END front
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -6235,9 +6251,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -6493,8 +6509,8 @@ END main
     MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "allocated-object-strict"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 84);
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phase, 85);
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assert.equal(json.instructionCount, 0);
   assert.deepEqual(json.memoryChanges, []);
   assert.deepEqual(json.simulatorMessages, [
@@ -6525,8 +6541,8 @@ END main
     MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 84);
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phase, 85);
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assert.equal(json.registers.EAX.hex, "00000000h");
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -6575,8 +6591,8 @@ END Other
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
-  assert.equal(json.phaseName, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
+  assert.equal(json.phase, 85);
+  assert.equal(json.phaseName, "Phase 85 - Program Console Buffer and Stream Separation");
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "assembly-error",
@@ -7307,7 +7323,7 @@ test("Phase 57T renders realistic playground diagnostics exactly", () => {
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assertNoExecutionComplete(json.simulatorMessages);
-  assert.equal(JSON.stringify(json).includes("programConsole"), false);
+  assertEmptyProgramConsole(json);
   assert.equal(rendered.includes("unexpected-character"), false);
   assert.equal(rendered.includes("lexer-failed"), false);
   assert.equal(rendered.includes("missing local file"), false);
@@ -7338,7 +7354,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -7566,7 +7582,7 @@ END MyProc
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7591,7 +7607,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7615,7 +7631,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7645,7 +7661,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -7680,7 +7696,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -7781,7 +7797,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.registers.ESP.hex, "00000000h");
   assert.equal(json.registers.EAX.hex, "00000000h");
@@ -8584,7 +8600,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 84);
+  assert.equal(json.phase, 85);
   assert.equal(json.memoryChanges.length, 0, rawJson);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -9190,7 +9206,7 @@ END main
   });
   assertNoExecutionComplete(json.simulatorMessages);
   assert.equal(rawJson.includes("instruction-limit-exceeded"), false, rawJson);
-  assert.equal(rawJson.includes("programConsole"), false, rawJson);
+  assert.equal(rawJson.includes("\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0}"), true, rawJson);
   assertRenderedEquals("phase61d-token-capacity", source, rawJson, rendered, "[assembly-error] token-capacity-exceeded line 104, column 12, byte offset 1542, span length 1: token buffer capacity exceeded");
 });
 

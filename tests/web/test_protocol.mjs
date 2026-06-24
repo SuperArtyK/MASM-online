@@ -8,6 +8,7 @@
 
 import assert from "node:assert/strict";
 import { IMPLEMENTED_PHASE, IMPLEMENTED_PHASE_NAME, IMPLEMENTED_PHASE_SUFFIX, SOURCE_RUN_OUTPUT_CONTRACT, createReadyMessage, handleWorkerRequest } from "../../web/src/protocol.js";
+
 import {
   COMPATIBILITY_NOTICES_OFF,
   MEMORY_RANGE_DECLARED_OBJECT_WARN,
@@ -19,6 +20,13 @@ import {
   UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
   TEACHING_DIAGNOSTIC_STRICT
 } from "../../web/src/settings.js";
+
+const EMPTY_PROGRAM_CONSOLE = {
+  text: "",
+  truncated: false,
+  byteCount: 0,
+  lineCount: 0
+};
 
 /**
  * Runs one named protocol test.
@@ -33,10 +41,10 @@ function test(name, body) {
 }
 
 test("ready message includes implemented phase and loaded wasm status", () => {
-  assert.equal(IMPLEMENTED_PHASE, 84);
+  assert.equal(IMPLEMENTED_PHASE, 85);
   assert.equal(IMPLEMENTED_PHASE_SUFFIX, "");
-  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup");
-  assert.equal(SOURCE_RUN_OUTPUT_CONTRACT, "phase-84-invoke-dword-argument-output-contract-v1");
+  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 85 - Program Console Buffer and Stream Separation");
+  assert.equal(SOURCE_RUN_OUTPUT_CONTRACT, "phase-85-program-console-stream-output-contract-v1");
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -46,10 +54,10 @@ test("ready message includes implemented phase and loaded wasm status", () => {
         sourceExecution: "available"
       },
       wasmTestValue: 32,
-      phase: 84,
+      phase: 85,
       phaseSuffix: "",
-      phaseName: "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup",
-      sourceRunOutputContract: "phase-84-invoke-dword-argument-output-contract-v1"
+      phaseName: "Phase 85 - Program Console Buffer and Stream Separation",
+      sourceRunOutputContract: "phase-85-program-console-stream-output-contract-v1"
     }
   });
 });
@@ -65,10 +73,10 @@ test("ready message supports not-built wasm status", () => {
         message: "missing"
       },
       wasmTestValue: null,
-      phase: 84,
+      phase: 85,
       phaseSuffix: "",
-      phaseName: "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup",
-      sourceRunOutputContract: "phase-84-invoke-dword-argument-output-contract-v1"
+      phaseName: "Phase 85 - Program Console Buffer and Stream Separation",
+      sourceRunOutputContract: "phase-85-program-console-stream-output-contract-v1"
     }
   });
 });
@@ -112,7 +120,7 @@ test("RUN_SOURCE dispatches to runtime with default diagnostic settings and retu
           callDepthLimit: 64
         });
         return {
-          phase: 84,
+          phase: 85,
           phaseSuffix: "",
           sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
           ok: true,
@@ -128,13 +136,14 @@ test("RUN_SOURCE dispatches to runtime with default diagnostic settings and retu
   assert.deepEqual(response, {
     type: "RUN_RESULT",
     payload: {
-      phase: 84,
+      phase: 85,
       phaseSuffix: "",
       sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
       ok: true,
       registers: {
         EAX: { hex: "0000002Ah", unsigned: 42 }
       },
+      programConsole: EMPTY_PROGRAM_CONSOLE,
       simulatorMessages: []
     }
   });
@@ -178,6 +187,7 @@ test("RUN_SOURCE dispatches normalized diagnostic settings to runtime", () => {
   );
 
   assert.equal(response.type, "RUN_RESULT");
+  assert.deepEqual(response.payload.programConsole, EMPTY_PROGRAM_CONSOLE);
   assert.equal(response.payload.ok, true);
 });
 
@@ -209,7 +219,7 @@ test("RUN_SOURCE dispatches Phase 71A root RET mode setting to runtime", () => {
           entryProcedureEndMode: 0,
           callDepthLimit: 64
         });
-        return { phase: 84, phaseSuffix: "", sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT, ok: false, simulatorMessages: [{ kind: "runtime-error", code: "root-ret-disallowed-by-mode" }] };
+        return { phase: 85, phaseSuffix: "", sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT, ok: false, simulatorMessages: [{ kind: "runtime-error", code: "root-ret-disallowed-by-mode" }] };
       }
     }
   );
@@ -248,7 +258,7 @@ test("RUN_SOURCE dispatches Phase 71D procedure fallthrough policy setting to ru
           callDepthLimit: 64
         });
         return {
-          phase: 84,
+          phase: 85,
           phaseSuffix: "",
           sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
           ok: false,
@@ -292,7 +302,7 @@ test("RUN_SOURCE dispatches Phase 71E entry procedure end mode setting to runtim
           callDepthLimit: 64
         });
         return {
-          phase: 84,
+          phase: 85,
           phaseSuffix: "",
           sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
           ok: true,
@@ -334,7 +344,7 @@ test("RUN_SOURCE dispatches Phase 72 callDepthLimit setting to runtime", () => {
           entryProcedureEndMode: 0,
           callDepthLimit: 1
         });
-        return { phase: 84, phaseSuffix: "", sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT, ok: false, simulatorMessages: [{ kind: "resource-limit-error", code: "call-depth-exceeded" }] };
+        return { phase: 85, phaseSuffix: "", sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT, ok: false, simulatorMessages: [{ kind: "resource-limit-error", code: "call-depth-exceeded" }] };
       }
     }
   );
@@ -540,11 +550,12 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
   );
 
   assert.equal(response.type, "RUN_RESULT");
+  assert.deepEqual(response.payload.programConsole, EMPTY_PROGRAM_CONSOLE);
   assert.equal(response.payload.phase, 29);
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 84 - INVOKE DWORD Argument Lowering and Cleanup. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 85 - Program Console Buffer and Stream Separation. Rebuild web/dist with the Emscripten build script."
   );
   assert.equal(response.payload.simulatorMessages[1].code, "stale-wasm-output-contract");
   assert.equal(response.payload.simulatorMessages[2].code, "unsupported-constant-expression");
@@ -571,7 +582,7 @@ test("RUN_SOURCE accepts matching runtime and output-contract metadata", () => {
     {
       runSource() {
         return {
-          phase: 84,
+          phase: 85,
           phaseSuffix: "",
           sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
           ok: true,
@@ -584,6 +595,7 @@ test("RUN_SOURCE accepts matching runtime and output-contract metadata", () => {
   );
 
   assert.equal(response.type, "RUN_RESULT");
+  assert.deepEqual(response.payload.programConsole, EMPTY_PROGRAM_CONSOLE);
   assert.equal(response.payload.simulatorMessages.length, 1);
   assert.equal(response.payload.simulatorMessages[0].code, "execution-complete");
 });
@@ -594,9 +606,9 @@ test("RUN_SOURCE rejects newer runtime phase metadata by default", () => {
     {
       runSource() {
         return {
-          phase: 85,
+          phase: 86,
           phaseSuffix: "",
-          phaseName: "Phase 85 - Future Runtime Behavior",
+          phaseName: "Phase 86 - Future Runtime Behavior",
           sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
           ok: true,
           simulatorMessages: []
@@ -606,11 +618,12 @@ test("RUN_SOURCE rejects newer runtime phase metadata by default", () => {
   );
 
   assert.equal(response.type, "RUN_RESULT");
+  assert.deepEqual(response.payload.programConsole, EMPTY_PROGRAM_CONSOLE);
   assert.equal(response.payload.simulatorMessages.length, 1);
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 85, but the UI/source files expect Phase 84 - INVOKE DWORD Argument Lowering and Cleanup. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 86, but the UI/source files expect Phase 85 - Program Console Buffer and Stream Separation. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -635,7 +648,7 @@ test("RUN_SOURCE rejects mismatched runtime phase suffix metadata", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 84 - INVOKE DWORD Argument Lowering and Cleanup. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 85 - Program Console Buffer and Stream Separation. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -659,7 +672,7 @@ test("RUN_SOURCE rejects missing runtime phase metadata", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior unknown, but the UI/source files expect Phase 84 - INVOKE DWORD Argument Lowering and Cleanup. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior unknown, but the UI/source files expect Phase 85 - Program Console Buffer and Stream Separation. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -705,7 +718,7 @@ test("RUN_SOURCE rejects missing runtime phase suffix metadata", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71 with missing or invalid suffix metadata, but the UI/source files expect Phase 84 - INVOKE DWORD Argument Lowering and Cleanup. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71 with missing or invalid suffix metadata, but the UI/source files expect Phase 85 - Program Console Buffer and Stream Separation. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -737,13 +750,14 @@ test("RUN_SOURCE marks matching runtime phase with missing output-contract metad
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {
       runSource() {
-        return { phase: 84, phaseSuffix: "", ok: true, simulatorMessages: [] };
+        return { phase: 85, phaseSuffix: "", ok: true, simulatorMessages: [] };
       }
     }
   );
 
   assert.equal(response.type, "RUN_RESULT");
-  assert.equal(response.payload.phase, 84);
+  assert.deepEqual(response.payload.programConsole, EMPTY_PROGRAM_CONSOLE);
+  assert.equal(response.payload.phase, 85);
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-output-contract");
   assert.equal(
     response.payload.simulatorMessages[0].message,
@@ -756,7 +770,7 @@ test("RUN_SOURCE marks matching runtime phase with stale output-contract metadat
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {
       runSource() {
-        return { phase: 84, phaseSuffix: "", sourceRunOutputContract: "phase-69b-output-ordering", ok: true, simulatorMessages: [] };
+        return { phase: 85, phaseSuffix: "", sourceRunOutputContract: "phase-69b-output-ordering", ok: true, simulatorMessages: [] };
       }
     }
   );
@@ -774,7 +788,7 @@ test("RUN_SOURCE treats non-string output-contract metadata as missing", () => {
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {
       runSource() {
-        return { phase: 84, phaseSuffix: "", sourceRunOutputContract: 69, ok: true, simulatorMessages: [] };
+        return { phase: 85, phaseSuffix: "", sourceRunOutputContract: 69, ok: true, simulatorMessages: [] };
       }
     }
   );
@@ -792,7 +806,7 @@ test("RUN_SOURCE creates stale-output-contract message when simulatorMessages is
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {
       runSource() {
-        return { phase: 84, phaseSuffix: "", ok: true, simulatorMessages: "not an array" };
+        return { phase: 85, phaseSuffix: "", ok: true, simulatorMessages: "not an array" };
       }
     }
   );

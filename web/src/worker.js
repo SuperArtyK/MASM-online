@@ -16,6 +16,20 @@ const WASM_MODULE_PATH = "../dist/masm32_sim_core.js";
 const workerRuntime = {};
 
 /**
+ * Creates an empty Program Console payload for source-run-style worker errors.
+ *
+ * @returns {{text: string, truncated: boolean, byteCount: number, lineCount: number}} Empty Program Console stream.
+ */
+function createEmptyProgramConsole() {
+  return {
+    text: "",
+    truncated: false,
+    byteCount: 0,
+    lineCount: 0
+  };
+}
+
+/**
  * Creates a structured description of a missing Wasm artifact.
  *
  * @returns {import("./protocol.js").WasmLoadInfo} Status for an artifact that has not been built yet.
@@ -76,7 +90,8 @@ function createRunSourceFunction(moduleInstance) {
           }
         ],
         registers: {},
-        memoryChanges: []
+        memoryChanges: [],
+        programConsole: createEmptyProgramConsole()
       };
     }
 
@@ -92,7 +107,8 @@ function createRunSourceFunction(moduleInstance) {
           }
         ],
         registers: {},
-        memoryChanges: []
+        memoryChanges: [],
+        programConsole: createEmptyProgramConsole()
       };
     }
 
@@ -108,7 +124,8 @@ function createRunSourceFunction(moduleInstance) {
           }
         ],
         registers: {},
-        memoryChanges: []
+        memoryChanges: [],
+        programConsole: createEmptyProgramConsole()
       };
     }
 
@@ -124,7 +141,8 @@ function createRunSourceFunction(moduleInstance) {
           }
         ],
         registers: {},
-        memoryChanges: []
+        memoryChanges: [],
+        programConsole: createEmptyProgramConsole()
       };
     }
 
@@ -140,7 +158,8 @@ function createRunSourceFunction(moduleInstance) {
           }
         ],
         registers: {},
-        memoryChanges: []
+        memoryChanges: [],
+        programConsole: createEmptyProgramConsole()
       };
     }
 
@@ -156,7 +175,8 @@ function createRunSourceFunction(moduleInstance) {
           }
         ],
         registers: {},
-        memoryChanges: []
+        memoryChanges: [],
+        programConsole: createEmptyProgramConsole()
       };
     }
 
@@ -172,7 +192,8 @@ function createRunSourceFunction(moduleInstance) {
           }
         ],
         registers: {},
-        memoryChanges: []
+        memoryChanges: [],
+        programConsole: createEmptyProgramConsole()
       };
     }
 
@@ -188,7 +209,8 @@ function createRunSourceFunction(moduleInstance) {
           }
         ],
         registers: {},
-        memoryChanges: []
+        memoryChanges: [],
+        programConsole: createEmptyProgramConsole()
       };
     }
 

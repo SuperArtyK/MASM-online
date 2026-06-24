@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 84 INVOKE DWORD argument behavior.
+ * @brief Tests for the Wasm-facing source execution API through Phase 85 Program Console stream separation.
  *
  * These tests verify the narrow browser-facing C export that parses and runs
  * supported `.code` and data-section programs, reports final registers and
@@ -18,7 +18,10 @@
 #define TEST_JSON_COPY_CAPACITY 8192U
 
 /// Exact current source-run output-contract identifier expected in source-run JSON.
-#define TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT "\"sourceRunOutputContract\":\"phase-84-invoke-dword-argument-output-contract-v1\""
+#define TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT "\"sourceRunOutputContract\":\"phase-85-program-console-stream-output-contract-v1\""
+
+/// Exact empty Program Console object expected before Irvine32 output routines exist.
+#define TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT "\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0}"
 
 /// Exact zero-startup notice wording expected in source-run JSON.
 #define TEST_STARTUP_STATE_NOTICE_TEXT "The simulator starts modeled flags and all registers to 0, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
@@ -231,13 +234,13 @@ static int test_minimal_source_runs_to_eax_42(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "successful source run should set ok true");
     failures += expect_json_contains(json, "\"status\":\"ok\"", "successful source run should report ok status");
     failures += expect_json_contains(json, "\"instructionCount\":3", "sample should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "sample should expose EAX = 42");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "success should include simulator completion message");
-    failures += expect_json_not_contains(json, "Program Console", "source-run JSON should not merge Program Console text into simulator messages");
+    failures += expect_json_not_contains(json, "\"message\":\"Program Console", "source-run JSON should not merge Program Console text into simulator messages");
 
     return failures;
 }
@@ -366,7 +369,7 @@ static int test_register_indirect_source_run_succeeds(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "register-indirect source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":4", "register-indirect sample should execute three instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "register-indirect sample should expose EAX = 100");
@@ -394,7 +397,7 @@ static int test_phase24_eax_base_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 26 EAX-base response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 26 EAX-base response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 26 EAX-base acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 26 EAX-base acceptance source should execute three instructions");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "Phase 26 EAX-base acceptance source should set EBX = 100");
@@ -435,7 +438,7 @@ static int test_all_gpr_register_indirect_source_run_succeeds(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "all-GPR response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "all-GPR response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "all-GPR register-indirect source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000050h\",\"unsigned\":80}", "all-GPR register-indirect source should load 80 through ESP");
     failures += expect_json_contains(json, "\"address\":\"0050001Ch\"", "all-GPR register-indirect source should write through ESP + 28");
@@ -459,7 +462,7 @@ static int test_type_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "TYPE acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":2", "TYPE acceptance source should execute one instruction");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "TYPE nums should expose EAX = 4");
@@ -514,7 +517,7 @@ static int test_lengthof_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "LENGTHOF acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":3", "LENGTHOF acceptance source should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "LENGTHOF nums should expose EAX = 10");
@@ -574,7 +577,7 @@ static int test_sizeof_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "SIZEOF acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":5", "SIZEOF acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000028h\",\"unsigned\":40}", "SIZEOF nums should expose EAX = 40");
@@ -835,7 +838,7 @@ static int test_constant_symbol_offset_source_run_succeeds(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "constant symbol-offset source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":3", "constant symbol-offset sample should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "constant symbol-offset sample should expose EAX = 100");
@@ -1119,7 +1122,7 @@ static int test_phase22_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 22 response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 22 response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 22 TEST acceptance program should execute");
     failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 22 TEST acceptance program should execute three instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "TEST acceptance should leave EAX zero");
@@ -1422,7 +1425,7 @@ static int test_multi_diagnostic_unsupported_feature_source_run_reports_all(void
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":false", "unsupported recovery source should not execute");
     failures += expect_json_contains(json, "\"status\":\"parse-error\"", "unsupported recovery source should be a parse error");
     failures += expect_json_contains(json, "STRUCT declarations", "source-run should include STRUCT diagnostic");
@@ -1473,7 +1476,7 @@ static int test_phase57s_high_level_flow_source_run_diagnostics(void) {
     failures += expect_json_contains(json, ".IF high-level MASM flow is not implemented", ".IF diagnostic message should be stable");
     failures += expect_json_not_contains(json, "badinstruction", "unsupported body instruction should not cascade");
     failures += expect_json_not_contains(json, "execution-complete", "high-level flow diagnostics should prevent execution");
-    failures += expect_json_not_contains(json, "programConsole", "high-level flow diagnostics should not produce Program Console output");
+    failures += expect_json_contains(json, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "high-level flow diagnostics should not produce Program Console output");
 
     return failures;
 }
@@ -1500,7 +1503,7 @@ static int test_signed_integer_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "signed acceptance program should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000008h\",\"unsigned\":8}", "TYPE SQWORD should produce EAX = 8");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000003h\",\"unsigned\":3}", "LENGTHOF SWORD DUP should produce EBX = 3");
@@ -1597,7 +1600,7 @@ static int test_signed_ptr_alias_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "signed PTR alias response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "signed PTR alias response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "signed PTR alias acceptance program should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"000000FFh\",\"unsigned\":255}", "SBYTE PTR b should load FFh into AL without sign extension");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"0000FFFEh\",\"unsigned\":65534}", "SWORD PTR w should load FFFEh into BX without sign extension");
@@ -1695,7 +1698,7 @@ static int test_extension_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "extension acceptance program should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"FFFFFFFFh\",\"unsigned\":4294967295}", "movsx eax, SBYTE -1 should sign-extend to FFFFFFFFh");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"000000FFh\",\"unsigned\":255}", "movzx ebx, BYTE 0FFh should zero-extend to FFh");
@@ -1891,7 +1894,7 @@ static int test_phase20_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "source-run response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "source-run response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 20 acceptance program should execute");
     failures += expect_json_contains(json, "\"instructionCount\":6", "Phase 20 acceptance program should execute five instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"FFFFFFF6h\",\"unsigned\":4294967286}", "NEG after XCHG should leave EAX = FFFFFFF6h");
@@ -2059,7 +2062,7 @@ static int test_phase57n_nop_source_run_hardening(void) {
     failures += expect_json_contains(between_copy, "\"instructionCount\":4", "NOP between mutating instructions should count as one instruction");
     failures += expect_json_contains(between_copy, "\"EAX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "NOP between MOV and INC should leave EAX = 2");
     failures += expect_json_contains(between_copy, "\"memoryChanges\":[]", "NOP register-only program should not create memory changes");
-    failures += expect_json_not_contains(between_copy, "programConsole", "NOP source-run program should not produce Program Console output");
+    failures += expect_json_contains(between_copy, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "NOP source-run program should not produce Program Console output");
     failures += expect_json_not_contains(between_copy, "NOP operand form is not accepted", "valid NOP should not emit NOP diagnostics");
 
     failures += expect_json_contains(before_copy, "\"ok\":true", "NOP before another instruction should execute");
@@ -2073,7 +2076,7 @@ static int test_phase57n_nop_source_run_hardening(void) {
     failures += expect_json_contains(only_copy, "\"ok\":true", "NOP-only program should execute");
     failures += expect_json_contains(only_copy, "\"instructionCount\":2", "NOP-only program should count one instruction");
     failures += expect_json_contains(only_copy, "\"memoryChanges\":[]", "NOP-only program should not create memory changes");
-    failures += expect_json_not_contains(only_copy, "programConsole", "NOP-only program should not produce Program Console output");
+    failures += expect_json_contains(only_copy, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "NOP-only program should not produce Program Console output");
 
     return failures;
 }
@@ -2161,7 +2164,7 @@ static int test_phase57o_nop_encoding_operand_source_run(void) {
     failures += expect_json_contains(invalid_address_copy, "\"EBX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "Phase 57O NOP encoding operand should allow following MOV");
     failures += expect_json_contains(invalid_address_copy, "\"memoryChanges\":[]", "Phase 57O invalid-address NOP should not create memory changes");
     failures += expect_json_not_contains(invalid_address_copy, "invalid-memory", "Phase 57O NOP encoding operand should not emit invalid-memory diagnostics");
-    failures += expect_json_not_contains(invalid_address_copy, "programConsole", "Phase 57O NOP encoding operand should not produce Program Console output");
+    failures += expect_json_contains(invalid_address_copy, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "Phase 57O NOP encoding operand should not produce Program Console output");
 
     failures += expect_json_contains(const_copy, "\"ok\":true", "Phase 57O NOP encoding operand over .CONST address should execute");
     failures += expect_json_not_contains(const_copy, "permission-denied", "Phase 57O NOP encoding operand should not emit .CONST permission diagnostics");
@@ -2209,7 +2212,7 @@ static int test_phase57o_nop_source_run_rejections(void) {
         failures += expect_json_contains(json, invalid_cases[index].code, "Phase 57O invalid NOP form should use the expected diagnostic code");
         failures += expect_json_contains(json, invalid_cases[index].message_fragment, "Phase 57O invalid NOP form should describe the specific invalid form");
         failures += expect_json_not_contains(json, "execution-complete", "Phase 57O invalid NOP form should not complete execution");
-        failures += expect_json_not_contains(json, "programConsole", "Phase 57O invalid NOP form should not produce Program Console output");
+        failures += expect_json_contains(json, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "Phase 57O invalid NOP form should not produce Program Console output");
     }
 
     return failures;
@@ -2233,7 +2236,7 @@ static int test_phase21_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 22 response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 22 response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 22 acceptance program should execute");
     failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 22 acceptance program should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Phase 22 acceptance should leave EAX zero");
@@ -2349,7 +2352,7 @@ static int test_phase25_register_supplied_memory_width_source_run_program(void) 
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 26 source-run response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 26 source-run response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 26 register-supplied memory-width source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":14", "Phase 26 register-supplied memory-width source should execute thirteen instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00500000h\",\"unsigned\":5242880}", "EAX should continue to hold the .data address");
@@ -2380,7 +2383,7 @@ static int test_phase25_register_supplied_source_memory_width_source_run_program
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 26 source-memory response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 26 source-memory response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 26 register-supplied source memory-width source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":6", "Phase 26 source-memory program should execute five instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00500000h\",\"unsigned\":5242880}", "EAX should hold the .data address");
@@ -2456,7 +2459,7 @@ static int test_phase25_explicit_ptr_symbol_register_override_source_run_program
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Explicit PTR override source-run response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "Explicit PTR override source-run response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "Explicit WORD PTR symbol/register program should execute");
     failures += expect_json_contains(json, "\"instructionCount\":4", "Explicit PTR override program should execute three instructions");
     failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"00001234h\",\"unsigned\":4660}", "DX should retain the written WORD value");
@@ -2528,7 +2531,7 @@ static int test_phase26_header_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 26 header response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 26 header response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 26 header source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":2", "Phase 26 header source should execute one instruction");
     failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"00500000h\",\"unsigned\":5242880}", "Phase 26 header source should set EDX to OFFSET msg");
@@ -2744,7 +2747,7 @@ static int test_phase57q_includelib_source_run_diagnostics(void) {
     failures += expect_json_contains(masm32_copy, "\"byteOffset\":11", "Phase 57Q MASM32 INCLUDELIB diagnostic should preserve byte offset");
     failures += expect_json_not_contains(masm32_copy, "unexpected-character", "Phase 57Q MASM32 INCLUDELIB should suppress repeated path diagnostics");
     failures += expect_json_not_contains(masm32_copy, "execution-complete", "Phase 57Q MASM32 INCLUDELIB should not execute");
-    failures += expect_json_not_contains(masm32_copy, "programConsole", "Phase 57Q INCLUDELIB should not produce Program Console output");
+    failures += expect_json_contains(masm32_copy, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "Phase 57Q INCLUDELIB should not produce Program Console output");
 
     failures += expect_json_contains(windows_copy, "unsupported-windows-api-library", "Phase 57Q Windows INCLUDELIB should expose Windows/API library code");
     failures += expect_json_contains(windows_copy, "Windows import library", "Phase 57Q Windows INCLUDELIB should explain import-library boundary");
@@ -2787,7 +2790,7 @@ static int test_phase28_additional_data_sections_source_run_programs(void) {
     const char *offset_write_json = NULL;
     int failures = 0;
 
-    failures += expect_json_contains(acceptance_json, "\"phase\":84", "Phase 30 response should identify current runtime phase");
+    failures += expect_json_contains(acceptance_json, "\"phase\":85", "Phase 30 response should identify current runtime phase");
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 29 acceptance source should execute");
     failures += expect_json_contains(acceptance_json, "\"EAX\":{\"hex\":\"00000010h\",\"unsigned\":16}", "Phase 29 acceptance source should set EAX to SIZEOF buf");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "Phase 29 acceptance source should read .CONST limit");
@@ -2857,7 +2860,7 @@ static int test_phase30_dup_initializer_list_source_run_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "DUP initializer list source should report current runtime/source-run MASM behavior phase metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "DUP initializer list source should report current runtime/source-run MASM behavior phase metadata");
     failures += expect_json_contains(json, "\"ok\":true", "DUP initializer list source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000006h\",\"unsigned\":6}", "DUP initializer list source should set EAX to LENGTHOF msg");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000006h\",\"unsigned\":6}", "DUP initializer list source should set EBX to SIZEOF msg");
@@ -2951,7 +2954,7 @@ static int test_phase61d_token_capacity_diagnostic_source_run_program(void) {
     failures += expect_json_contains(json, "\"spanLength\":1", "token-capacity source should preserve span length");
     failures += expect_json_not_contains(json, "execution-complete", "token-capacity source should not complete execution");
     failures += expect_json_not_contains(json, "instruction-limit-exceeded", "token-capacity source should not be reported as runtime instruction limit");
-    failures += expect_json_not_contains(json, "programConsole", "token-capacity source should not produce Program Console output");
+    failures += expect_json_contains(json, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "token-capacity source should not produce Program Console output");
 
     return failures;
 }
@@ -2988,7 +2991,7 @@ static int test_phase61d_source_text_capacity_diagnostic_source_run_program(void
     failures += expect_json_contains(json, "\"spanLength\":3", "source-text capacity source should preserve span length");
     failures += expect_json_not_contains(json, "execution-complete", "source-text capacity source should not complete execution");
     failures += expect_json_not_contains(json, "instruction-limit-exceeded", "source-text capacity source should not be reported as runtime instruction limit");
-    failures += expect_json_not_contains(json, "programConsole", "source-text capacity source should not produce Program Console output");
+    failures += expect_json_contains(json, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "source-text capacity source should not produce Program Console output");
 
     return failures;
 }
@@ -3027,7 +3030,7 @@ static int test_phase61d_code_label_capacity_diagnostic_source_run_program(void)
     failures += expect_json_contains(json, "\"spanLength\":4", "code-label capacity source should preserve span length");
     failures += expect_json_not_contains(json, "execution-complete", "code-label capacity source should not complete execution");
     failures += expect_json_not_contains(json, "instruction-limit-exceeded", "code-label capacity source should not be reported as runtime instruction limit");
-    failures += expect_json_not_contains(json, "programConsole", "code-label capacity source should not produce Program Console output");
+    failures += expect_json_contains(json, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "code-label capacity source should not produce Program Console output");
 
     return failures;
 }
@@ -4967,14 +4970,14 @@ static int test_phase41_irvine32_virtual_include_metadata_source_run(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Irvine32 virtual include response should report current runtime/source-run MASM behavior phase metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Irvine32 virtual include response should report current runtime/source-run MASM behavior phase metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Irvine32 include acceptance program should execute successfully");
     failures += expect_json_contains(json, "\"status\":\"ok\"", "Irvine32 include acceptance program should report ok status");
     failures += expect_json_contains(json, "\"instructionCount\":1", "Irvine32 include acceptance program should not synthesize routine execution");
     failures += expect_json_contains(json, "\"virtualIncludes\":{\"irvine32\":true,\"irvine32SymbolCount\":", "Irvine32 include should expose registry metadata");
     failures += expect_json_not_contains(json, "\"irvine32SymbolCount\":0", "Irvine32 registry should contain known virtual names");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Irvine32 include acceptance program should complete normally");
-    failures += expect_json_not_contains(json, "Program Console", "Phase 41 must not add Program Console routine behavior");
+    failures += expect_json_not_contains(json, "\"message\":\"Program Console", "Phase 41 must not add Program Console routine behavior");
 
     return failures;
 }
@@ -5043,14 +5046,14 @@ static int test_phase42_irvine32_exit_terminator_source_run(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Irvine32 exit response should report current runtime/source-run MASM behavior phase metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Irvine32 exit response should report current runtime/source-run MASM behavior phase metadata");
     failures += expect_json_contains(json, "\"ok\":true", "exit terminator source should execute successfully");
     failures += expect_json_contains(json, "\"status\":\"ok\"", "exit terminator source should report ok status");
     failures += expect_json_contains(json, "\"instructionCount\":2", "exit terminator should count MOV and EXIT only");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000007Bh\",\"unsigned\":123}", "instruction after exit must not execute");
     failures += expect_json_contains(json, "\"code\":\"startup-state-notice\"", "exit terminator should include startup-state notice");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "exit terminator should complete normally");
-    failures += expect_json_not_contains(json, "programConsole", "exit must not create Program Console output");
+    failures += expect_json_contains(json, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "exit must not create Program Console output");
     failures += expect_json_not_contains(json, "999", "instruction after exit should not affect observable state");
 
     return failures;
@@ -5137,7 +5140,7 @@ static int test_phase43_inc_dec_register_source_run_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 43 INC/DEC response should report current runtime metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 43 INC/DEC response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 43 INC/DEC acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 43 INC/DEC acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"FFFFFFFFh\",\"unsigned\":4294967295}", "INC/DEC acceptance source should leave EAX at FFFFFFFFh");
@@ -5296,7 +5299,7 @@ static int test_phase44_logical_binary_source_run_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 44 logical response should report current runtime metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 44 logical response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 44 logical acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 44 logical acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"000001FFh\",\"unsigned\":511}", "Phase 44 logical acceptance source should leave EAX at 000001FFh");
@@ -5466,7 +5469,7 @@ static int test_phase45_not_source_run_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Milestone 45 NOT regression response should report current runtime/source-run MASM behavior phase metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Milestone 45 NOT regression response should report current runtime/source-run MASM behavior phase metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Milestone 45 NOT regression source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":4", "Milestone 45 NOT regression source should execute three instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"FFFFFFFFh\",\"unsigned\":4294967295}", "Milestone 45 NOT regression source should leave EAX at FFFFFFFFh");
@@ -5626,7 +5629,7 @@ static int test_phase46_shift_left_source_run_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 46 SHL/SAL response should report current runtime metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 46 SHL/SAL response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 46 SHL/SAL acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 46 SHL/SAL acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000008h\",\"unsigned\":8}", "SHL/SAL source should leave EAX at 8");
@@ -5786,7 +5789,7 @@ static int test_phase47_shr_source_run_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 47 SHR regression should report current runtime/source-run MASM behavior phase metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 47 SHR regression should report current runtime/source-run MASM behavior phase metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 47 SHR regression acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 47 SHR regression acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"10000000h\",\"unsigned\":268435456}", "SHR source should leave EAX at 10000000h");
@@ -5969,7 +5972,7 @@ static int test_phase48_sar_source_run_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 48 SAR response should report current runtime metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 48 SAR response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 48 SAR acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 48 SAR acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"F0000000h\",\"unsigned\":4026531840}", "SAR source should leave EAX at F0000000h");
@@ -6154,7 +6157,7 @@ static int test_phase49_rol_source_run_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 49 ROL response should report current runtime metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 49 ROL response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 49 ROL acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 49 ROL acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "ROL source should leave EAX at 4 after one-bit then CL rotate");
@@ -6345,7 +6348,7 @@ static int test_phase50_ror_source_run_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 50 ROR response should report current runtime metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 50 ROR response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 50 ROR acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 50 ROR acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000020h\",\"unsigned\":32}", "ROR source should leave EAX at 20h after one-bit then CL rotate");
@@ -6541,7 +6544,7 @@ static int test_phase52_lea_source_run_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 52 LEA response should report current runtime metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 52 LEA response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 52 LEA acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":6", "Phase 52 LEA acceptance source should execute five instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00500008h\",\"unsigned\":5242888}", "LEA nums[8] should compute OFFSET nums plus eight");
@@ -6688,7 +6691,7 @@ static int test_phase57corr2_compact_negative_displacement_write_source_run(void
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 57-CORR2 write response should report current numeric runtime metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 57-CORR2 write response should report current numeric runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "compact negative displacement write should execute");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "compact negative displacement write should update x and load EBX = 10");
     failures += expect_json_contains(json, "\"symbol\":\"x\",\"address\":\"00500000h\"", "compact negative displacement write should resolve memory change to x base");
@@ -6716,7 +6719,7 @@ static int test_phase57corr2_compact_negative_displacement_read_source_run(void)
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 57-CORR2 read response should report current numeric runtime metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 57-CORR2 read response should report current numeric runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "compact negative displacement read should execute");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "compact negative displacement read should load EBX = 10");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "compact negative displacement read should complete successfully");
@@ -6742,7 +6745,7 @@ static int test_phase57corr2_compact_negative_displacement_lea_source_run(void) 
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 57-CORR2 LEA response should report current numeric runtime metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 57-CORR2 LEA response should report current numeric runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "compact negative displacement LEA should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00500000h\",\"unsigned\":5242880}", "compact negative displacement LEA should compute x base address");
     failures += expect_json_contains(json, "\"memoryChanges\":[]", "compact negative displacement LEA should not create memory-change rows");
@@ -6772,7 +6775,7 @@ static int test_phase57corr2_compact_negative_displacement_advanced_rejection_so
     failures += expect_json_contains(json, "\"ok\":false", "advanced compact displacement expression should fail source-run");
     failures += expect_json_contains(json, "unsupported-scaled-index", "advanced compact displacement expression should use unsupported scaled-index diagnostic");
     failures += expect_json_not_contains(json, "execution-complete", "advanced compact displacement expression should not execute");
-    failures += expect_json_not_contains(json, "programConsole", "advanced compact displacement expression should not produce Program Console output");
+    failures += expect_json_contains(json, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "advanced compact displacement expression should not produce Program Console output");
     failures += expect_json_contains(json, "\"memoryChanges\":[]", "advanced compact displacement expression should not create memory-change rows");
 
     return failures;
@@ -6795,7 +6798,7 @@ static int test_phase53_mul_source_run_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 53 MUL response should report current runtime metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 53 MUL response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 53 MUL acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 53 MUL acceptance source should execute three instructions");
     failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "MUL fitting 32-bit product should clear EDX");
@@ -6940,7 +6943,7 @@ static int test_phase56_div_source_run_programs(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 56 DIV response should report current runtime metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 56 DIV response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 56 32-bit DIV should execute");
     failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 56 32-bit DIV should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Eh\",\"unsigned\":14}", "100/7 DIV should write EAX quotient 14");
@@ -7081,7 +7084,7 @@ static int test_phase57_idiv_source_run_programs(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 57 IDIV response should report runtime metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 57 IDIV response should report runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 57 32-bit IDIV should execute");
     failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 57 32-bit IDIV should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"FFFFFFF2h\",\"unsigned\":4294967282}", "-100/7 IDIV should write EAX quotient -14");
@@ -8055,7 +8058,7 @@ static int test_phase54_imul_source_run_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 54 IMUL response should report current runtime metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 54 IMUL response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 54 IMUL acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 54 IMUL acceptance source should execute three instructions");
     failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"FFFFFFFFh\",\"unsigned\":4294967295}", "IMUL fitting signed product should sign-extend EDX");
@@ -8276,7 +8279,7 @@ static int test_phase55_imul_source_run_programs(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 55 IMUL response should report current runtime metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 55 IMUL response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 55 two-operand IMUL should execute");
     failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 55 two-operand IMUL should execute three instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Ch\",\"unsigned\":12}", "3*4 two-operand IMUL should write EAX=12");
@@ -8882,14 +8885,14 @@ static int test_phase57e_default_startup_state_notice_source_run(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Startup-state notice regression should report current numeric phase metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Startup-state notice regression should report current numeric phase metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Startup-state notice should not block execution");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "Startup-state notice should not change register results");
     failures += expect_json_contains(json, "\"kind\":\"simulator-notice\"", "Startup-state notice should render as simulator notice");
     failures += expect_json_contains(json, "\"code\":\"startup-state-notice\"", "Startup-state notice should use stable diagnostic code");
     failures += expect_json_contains(json, TEST_STARTUP_STATE_NOTICE_TEXT, "Startup-state notice should use stable exact wording");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Startup-state notice should still allow completion message");
-    failures += expect_json_not_contains(json, "Program Console", "Startup-state notice must not be Program Console output");
+    failures += expect_json_not_contains(json, "\"message\":\"Program Console", "Startup-state notice must not be Program Console output");
     failures += expect_json_not_contains(json, "\"line\":", "Source-less startup-state notice fixture should not add line metadata");
     failures += expect_json_not_contains(json, "\"byteOffset\":", "Source-less startup-state notice fixture should not add byte offset metadata");
 
@@ -9017,7 +9020,7 @@ static int test_phase57h_register_write_metadata_no_register_writes(void) {
     failures += expect_json_contains(json, "\"EFLAGS\":false", "No-instruction run should report EFLAGS family as unwritten");
     failures += expect_json_contains(json, "\"code\":\"startup-state-notice\"", "Phase 57H metadata should not remove the startup-state notice");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Phase 57H metadata should not remove execution-complete messages");
-    failures += expect_json_not_contains(json, "programConsole", "Phase 57H metadata should not add Program Console output");
+    failures += expect_json_contains(json, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "Phase 57H metadata should not add Program Console output");
 
     return failures;
 }
@@ -9040,7 +9043,7 @@ static int test_phase57h_register_write_metadata_same_value_parent_write(void) {
     failures += expect_json_contains(json, "\"EBX\":false", "Unwritten EBX family should remain marked false");
     failures += expect_json_contains(json, "\"code\":\"startup-state-notice\"", "Same-value write metadata should preserve startup-state notice output");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Same-value write metadata should preserve execution-complete output");
-    failures += expect_json_not_contains(json, "programConsole", "Same-value write metadata should not add Program Console output");
+    failures += expect_json_contains(json, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "Same-value write metadata should not add Program Console output");
 
     return failures;
 }
@@ -9184,7 +9187,7 @@ static int test_phase82_invoke_addr_external_routine_source_run_diagnostics(void
     failures += expect_json_contains(stdout_copy, "\"line\":5", "StdOut source should preserve INVOKE line");
     failures += expect_json_contains(stdout_copy, "\"column\":12", "StdOut source should point at external target token");
     failures += expect_json_not_contains(stdout_copy, "execution-complete", "StdOut INVOKE should not execute");
-    failures += expect_json_not_contains(stdout_copy, "programConsole", "StdOut INVOKE should not produce Program Console output");
+    failures += expect_json_contains(stdout_copy, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "StdOut INVOKE should not produce Program Console output");
 
     failures += expect_json_contains(crt_copy, "unsupported-external-invoke", "CRT source should expose external INVOKE code");
     failures += expect_json_contains(crt_copy, "C runtime", "CRT source should describe C runtime boundary");
@@ -9335,36 +9338,36 @@ static int test_phase57t_playground_diagnostic_recovery_smoke_fixtures(void) {
     failures += expect_json_not_contains(playground_copy, "unexpected-character", "Phase 57T playground fixture should not flood path separators as character diagnostics");
     failures += expect_json_not_contains(playground_copy, "lexer-failed", "Phase 57T playground fixture should not collapse into lexer-failed");
     failures += expect_json_not_contains(playground_copy, "execution-complete", "Phase 57T playground fixture should not report execution completion");
-    failures += expect_json_not_contains(playground_copy, "programConsole", "Phase 57T playground fixture should not produce Program Console output");
+    failures += expect_json_contains(playground_copy, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "Phase 57T playground fixture should not produce Program Console output");
     failures += expect_json_not_contains(playground_copy, "missing local file", "Phase 57T INCLUDELIB diagnostics should not imply local file probing");
 
     failures += expect_json_contains(call_copy, "unknown-symbol", "Phase 57T unresolved CALL fixture should use current unknown-symbol classification");
     failures += expect_json_contains(call_copy, "CALL target is not a known user procedure entry.", "Phase 57T unresolved CALL fixture should report a missing user procedure target");
     failures += expect_json_not_contains(call_copy, "execution-complete", "Phase 57T CALL fixture should not execute");
-    failures += expect_json_not_contains(call_copy, "programConsole", "Phase 57T CALL fixture should not produce Program Console output");
+    failures += expect_json_contains(call_copy, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "Phase 57T CALL fixture should not produce Program Console output");
 
     failures += expect_json_contains(ret_copy, "\"ok\":true", "Phase 71 root RET fixture should complete");
     failures += expect_json_contains(ret_copy, "\"code\":\"execution-complete\"", "Phase 71 root RET fixture should emit completion");
     failures += expect_json_contains(ret_copy, "\"memoryChanges\":[]", "Phase 71 root RET fixture should not expose memory changes");
     failures += expect_json_not_contains(ret_copy, "invalid-address", "Phase 71 root RET fixture should not read empty-stack memory");
     failures += expect_json_not_contains(ret_copy, "invalid-return-address", "Phase 71 root RET fixture should not validate a return token");
-    failures += expect_json_not_contains(ret_copy, "programConsole", "Phase 71 root RET fixture should not produce Program Console output");
+    failures += expect_json_contains(ret_copy, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "Phase 71 root RET fixture should not produce Program Console output");
 
     failures += expect_json_contains(cmp_copy, "\"ok\":true", "Phase 62 CMP register/immediate fixture should execute successfully");
     failures += expect_json_contains(cmp_copy, "\"instructionCount\":2", "Phase 62 CMP register/immediate fixture should emit one instruction");
     failures += expect_json_contains(cmp_copy, "\"EFLAGS\":{\"hex\":\"00000081h\",\"unsigned\":129}", "Phase 62 CMP register/immediate fixture should update subtraction flags");
     failures += expect_json_contains(cmp_copy, "execution-complete", "Phase 62 CMP register/immediate fixture should complete");
-    failures += expect_json_not_contains(cmp_copy, "programConsole", "Phase 62 CMP register/immediate fixture should not produce Program Console output");
+    failures += expect_json_contains(cmp_copy, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "Phase 62 CMP register/immediate fixture should not produce Program Console output");
 
     failures += expect_json_contains(conditional_jump_copy, "unsupported-instruction", "Phase 57T loop fixture should use current unsupported-instruction classification");
     failures += expect_json_contains(conditional_jump_copy, "spanLength\":4", "Phase 57T LOOP fixture should preserve the loop mnemonic span");
     failures += expect_json_not_contains(conditional_jump_copy, "execution-complete", "Phase 57T loop fixture should not execute");
-    failures += expect_json_not_contains(conditional_jump_copy, "programConsole", "Phase 57T loop fixture should not produce Program Console output");
+    failures += expect_json_contains(conditional_jump_copy, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "Phase 57T loop fixture should not produce Program Console output");
 
     failures += expect_json_contains(exitprocess_copy, "unsupported-external-invoke", "Phase 57T WinAPI fixture should classify ExitProcess as external INVOKE boundary");
     failures += expect_json_contains(exitprocess_copy, "Windows/API", "Phase 57T WinAPI fixture should describe external/API behavior");
     failures += expect_json_not_contains(exitprocess_copy, "execution-complete", "Phase 57T WinAPI fixture should not execute");
-    failures += expect_json_not_contains(exitprocess_copy, "programConsole", "Phase 57T WinAPI fixture should not produce Program Console output");
+    failures += expect_json_contains(exitprocess_copy, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "Phase 57T WinAPI fixture should not produce Program Console output");
 
     return failures;
 }
@@ -9457,14 +9460,14 @@ static int test_phase58_label_source_run_behavior(void) {
         )
     );
 
-    failures += expect_json_contains(labeled_copy, "\"phase\":84", "Labeled source should report numeric current runtime phase metadata");
-    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 84 - INVOKE DWORD Argument Lowering and Cleanup\"", "Labeled source should report current runtime phase name");
+    failures += expect_json_contains(labeled_copy, "\"phase\":85", "Labeled source should report numeric current runtime phase metadata");
+    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 85 - Program Console Buffer and Stream Separation\"", "Labeled source should report current runtime phase name");
     failures += expect_json_contains(labeled_copy, "\"ok\":true", "valid labeled source should execute");
     failures += expect_json_contains(labeled_copy, "\"instructionCount\":3", "labels should not emit extra executable instructions");
     failures += expect_json_contains(labeled_copy, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1", "labeled source should set EAX");
     failures += expect_json_contains(labeled_copy, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2", "labeled source should set EBX");
     failures += expect_json_contains(labeled_copy, "\"memoryChanges\":[]", "labels-only source should not create memory changes");
-    failures += expect_json_not_contains(labeled_copy, "programConsole", "labels should not create Program Console output");
+    failures += expect_json_contains(labeled_copy, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "labels should not create Program Console output");
 
     failures += expect_json_contains(consecutive_copy, "\"ok\":true", "consecutive labels should execute");
     failures += expect_json_contains(consecutive_copy, "\"instructionCount\":2", "consecutive labels should execute following instruction once");
@@ -9474,7 +9477,7 @@ static int test_phase58_label_source_run_behavior(void) {
     failures += expect_json_contains(duplicate_copy, "duplicate-label", "duplicate label source should report duplicate-label diagnostic");
     failures += expect_json_contains(duplicate_copy, "first defined at line 3, column 1", "duplicate label message should include prior definition location");
     failures += expect_json_not_contains(duplicate_copy, "execution-complete", "duplicate label source should not report execution completion");
-    failures += expect_json_not_contains(duplicate_copy, "programConsole", "duplicate label source should not create Program Console output");
+    failures += expect_json_contains(duplicate_copy, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "duplicate label source should not create Program Console output");
 
     failures += expect_json_contains(jmp_copy, "\"ok\":true", "jmp label source should execute in Phase 61");
     failures += expect_json_contains(jmp_copy, "\"instructionCount\":4", "jmp label source should commit MOV, JMP, and target MOV");
@@ -9572,8 +9575,8 @@ static int test_phase64_equality_jumps_source_run_programs(void) {
     ));
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 64 equality-jump acceptance program should execute");
-    failures += expect_json_contains(acceptance_json, "\"phase\":84", "Equality-jump regression should report current numeric phase metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 84 - INVOKE DWORD Argument Lowering and Cleanup\"", "Equality-jump regression should report current runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phase\":85", "Equality-jump regression should report current numeric phase metadata");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 85 - Program Console Buffer and Stream Separation\"", "Equality-jump regression should report current runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2", "taken JE should execute equal target");
     failures += expect_json_contains(acceptance_json, "\"instructionCount\":6", "taken JE acceptance path should commit MOV, CMP, JE, target MOV, and done NOP");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JE should not create memory changes");
@@ -9827,8 +9830,8 @@ static int test_phase65_signed_relational_jumps_source_run_programs(void) {
     ));
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 65 signed relational acceptance program should execute");
-    failures += expect_json_contains(acceptance_json, "\"phase\":84", "current runtime acceptance program should report numeric metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 84 - INVOKE DWORD Argument Lowering and Cleanup\"", "current runtime acceptance program should report runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phase\":85", "current runtime acceptance program should report numeric metadata");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 85 - Program Console Buffer and Stream Separation\"", "current runtime acceptance program should report runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1", "taken JL should execute less target");
     failures += expect_json_contains(acceptance_json, "\"instructionCount\":6", "taken JL acceptance path should commit MOV, CMP, JL, target MOV, and done NOP");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JL should not create memory changes");
@@ -10192,8 +10195,8 @@ static int test_phase66_unsigned_relational_jumps_source_run_programs(void) {
     ));
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 66 unsigned relational acceptance program should execute");
-    failures += expect_json_contains(acceptance_json, "\"phase\":84", "current runtime acceptance program should report numeric metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 84 - INVOKE DWORD Argument Lowering and Cleanup\"", "current runtime acceptance program should report runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phase\":85", "current runtime acceptance program should report numeric metadata");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 85 - Program Console Buffer and Stream Separation\"", "current runtime acceptance program should report runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1", "taken JA should execute above target");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JA should not create memory changes");
     failures += expect_json_not_contains(acceptance_json, "branch-runtime-deferred", "valid JA should not emit deferred branch diagnostic");
@@ -10300,7 +10303,7 @@ static int test_phase69_direct_call_source_run_behavior(void) {
         "Helper ENDP\n"
         "END main\n"
     ));
-    failures += expect_json_contains(valid_copy, "\"phase\":84", "Phase 69 CALL regression fixture should report current Phase 78 runtime metadata");
+    failures += expect_json_contains(valid_copy, "\"phase\":85", "Phase 69 CALL regression fixture should report current Phase 78 runtime metadata");
     failures += expect_json_contains(valid_copy, "\"ok\":false", "direct user-procedure CALL with helper fallthrough should now fail at the helper boundary");
     failures += expect_json_contains(valid_copy, "\"code\":\"procedure-fell-through\"", "CALL-reached helper fallthrough should use Phase 71 diagnostic");
     failures += expect_json_contains(valid_copy, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "direct CALL should transfer to the helper procedure body before fallthrough diagnostic");
@@ -10356,7 +10359,7 @@ static int test_phase69_direct_call_source_run_behavior(void) {
     failures += expect_json_contains(invalid_stack_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "failed CALL should not transfer to the helper body");
     failures += expect_json_contains(invalid_stack_copy, "\"memoryChanges\":[]", "failed CALL stack write should not report memory-change rows");
     failures += expect_json_not_contains(invalid_stack_copy, "execution-complete", "failed CALL should not emit execution-complete");
-    failures += expect_json_not_contains(invalid_stack_copy, "programConsole", "failed CALL should not produce Program Console output");
+    failures += expect_json_contains(invalid_stack_copy, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "failed CALL should not produce Program Console output");
 
     copy_source_run_json(invalid_target_copy, sizeof(invalid_target_copy), masm32_sim_wasm_run_source_json(
         "INCLUDE Irvine32.inc\n"
@@ -10404,15 +10407,15 @@ static int test_phase71_call_ret_source_run_behavior(void) {
         "END main\n"
     ));
     failures += expect_json_contains(success_copy, "\"ok\":true", "Phase 71 CALL/RET acceptance program should execute");
-    failures += expect_json_contains(success_copy, "\"phase\":84", "Phase 71 CALL/RET acceptance program should report numeric phase metadata");
-    failures += expect_json_contains(success_copy, "\"phaseName\":\"Phase 84 - INVOKE DWORD Argument Lowering and Cleanup\"", "Phase 71 CALL/RET acceptance program should report runtime phase name");
+    failures += expect_json_contains(success_copy, "\"phase\":85", "Phase 71 CALL/RET acceptance program should report numeric phase metadata");
+    failures += expect_json_contains(success_copy, "\"phaseName\":\"Phase 85 - Program Console Buffer and Stream Separation\"", "Phase 71 CALL/RET acceptance program should report runtime phase name");
     failures += expect_json_contains(success_copy, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "current source-run output contract should be reported");
     failures += expect_json_contains(success_copy, "\"EAX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "helper should leave EAX set to 42");
     failures += expect_json_contains(success_copy, "\"EBX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "post-RET instruction should observe helper result");
     failures += expect_json_contains(success_copy, "\"ESP\":{\"hex\":\"00900000h\",\"unsigned\":9437184}", "CALL/RET should restore ESP to the empty-stack top");
     failures += expect_json_contains(success_copy, "\"memoryChanges\":[]", "CALL/RET implicit stack token accesses should not create public memoryChanges rows");
     failures += expect_json_contains(success_copy, "\"code\":\"execution-complete\"", "successful CALL/RET program should emit execution-complete");
-    failures += expect_json_not_contains(success_copy, "programConsole", "CALL/RET acceptance program should not produce Program Console output");
+    failures += expect_json_contains(success_copy, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "CALL/RET acceptance program should not produce Program Console output");
 
     copy_source_run_json(invalid_token_copy, sizeof(invalid_token_copy), masm32_sim_wasm_run_source_json(
         ".code\n"
@@ -10434,7 +10437,7 @@ static int test_phase71_call_ret_source_run_behavior(void) {
     failures += expect_json_contains(invalid_token_copy, "\"ESP\":{\"hex\":\"008FFFFCh\",\"unsigned\":9437180}", "failed RET token validation should not pop ESP");
     failures += expect_json_contains(invalid_token_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "failed RET token validation should not execute post-CALL instruction");
     failures += expect_json_not_contains(invalid_token_copy, "execution-complete", "invalid-return-address should not emit execution-complete");
-    failures += expect_json_not_contains(invalid_token_copy, "programConsole", "invalid-return-address should not produce Program Console output");
+    failures += expect_json_contains(invalid_token_copy, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "invalid-return-address should not produce Program Console output");
 
     copy_source_run_json(empty_stack_copy, sizeof(empty_stack_copy), masm32_sim_wasm_run_source_json(
         ".code\n"
@@ -11312,7 +11315,7 @@ static int test_phase82_zero_argument_invoke_source_run_semantics(void) {
         "END main\n"
     ));
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 84 accepted zero-argument INVOKE source should execute successfully");
-    failures += expect_json_contains(acceptance_json, "\"phase\":84", "Phase 84 accepted zero-argument INVOKE source should report current phase");
+    failures += expect_json_contains(acceptance_json, "\"phase\":85", "Phase 85 metadata should accompany accepted zero-argument INVOKE source");
     failures += expect_json_contains(acceptance_json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 84 accepted zero-argument INVOKE source should report current output contract");
     failures += expect_json_contains(acceptance_json, "\"EAX\":{\"hex\":\"00000037h\",\"unsigned\":55}", "Phase 82 accepted INVOKE source should execute Helper and leave EAX = 55");
     failures += expect_json_contains(acceptance_json, "execution-complete", "Phase 82 accepted INVOKE source should complete execution");
@@ -11555,7 +11558,7 @@ static int test_phase82_zero_argument_invoke_source_run_semantics(void) {
     return failures;
 }
 
-/// Verifies current Phase 84 runtime/source-run status metadata is emitted by source-run JSON.
+/// Verifies current Phase 85 runtime/source-run status metadata is emitted by source-run JSON.
 ///
 /// @return Number of failures.
 static int test_current_source_run_phase_metadata(void) {
@@ -11567,9 +11570,9 @@ static int test_current_source_run_phase_metadata(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Current runtime metadata should report numeric Phase 84 metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Current runtime metadata should report numeric Phase 85 metadata");
     failures += expect_json_contains(json, "\"phaseSuffix\":\"\"", "Current runtime metadata should report empty suffix metadata");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 84 - INVOKE DWORD Argument Lowering and Cleanup\"", "Current runtime metadata should report the Phase 84 runtime phase name");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 85 - Program Console Buffer and Stream Separation\"", "Current runtime metadata should report the Phase 85 runtime phase name");
     failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "current source-run should report separate output-contract metadata");
     failures += expect_json_contains(json, "\"entryProcedureEndMode\":\"code-stream\"", "Phase 71E should serialize the default entry procedure end mode");
 
@@ -11597,7 +11600,7 @@ static int test_phase81_proto_source_run_non_effect(void) {
         "END main\n"
     ));
     failures += expect_json_contains(accepted_json, "\"ok\":true", "accepted PROTO metadata should not block source-run execution");
-    failures += expect_json_contains(accepted_json, "\"phase\":84", "accepted PROTO source-run should report current numeric phase");
+    failures += expect_json_contains(accepted_json, "\"phase\":85", "accepted PROTO source-run should report current numeric phase");
     failures += expect_json_contains(accepted_json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "accepted PROTO source-run should report current output contract");
     failures += expect_json_contains(accepted_json, "\"EAX\":{\"hex\":\"0000002Ah\"", "accepted PROTO should not change runtime register behavior");
     failures += expect_json_not_contains(accepted_json, "unsupported-feature", "accepted PROTO should no longer use the generic unsupported-feature diagnostic");
@@ -12081,7 +12084,7 @@ static int test_phase67a_entry_procedure_runtime_boundary_source_run(void) {
         "END main\n"
     ));
     failures += expect_json_contains(before_copy, "\"ok\":true", "Phase 67A helper-before-entry source should execute");
-    failures += expect_json_contains(before_copy, "\"phase\":84", "Phase 67A helper-before-entry source should report numeric phase metadata");
+    failures += expect_json_contains(before_copy, "\"phase\":85", "Phase 67A helper-before-entry source should report numeric phase metadata");
     failures += expect_json_contains(before_copy, "\"phaseSuffix\":\"\"", "Helper-before-entry source should report current suffix metadata");
     failures += expect_json_contains(before_copy, "\"executedInstructionCount\":2", "Phase 67A should execute only the selected entry instruction");
     failures += expect_json_contains(before_copy, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "selected main procedure should set EAX");
@@ -12845,7 +12848,7 @@ static int test_phase57f_seeded_startup_notice_source_run(void) {
     failures += expect_json_contains(json, "\"kind\":\"simulator-notice\"", "Seeded startup should emit a Simulator Messages notice when enabled");
     failures += expect_json_contains(json, "\"code\":\"startup-state-notice\"", "Seeded startup notice should use the startup diagnostic code");
     failures += expect_json_contains(json, TEST_SEEDED_STARTUP_NOTICE_TEXT, "Seeded startup notice should use exact Phase 57F wording");
-    failures += expect_json_not_contains(json, "Program Console", "Seeded startup notice should not write Program Console output");
+    failures += expect_json_not_contains(json, "\"message\":\"Program Console", "Seeded startup notice should not write Program Console output");
 
     return failures;
 }
@@ -13411,7 +13414,7 @@ static int test_phase57g_seeded_uninitialized_storage_notice_source_run(void) {
     failures += expect_json_contains(json, "\"kind\":\"simulator-notice\"", "Seeded uninitialized storage should emit a Simulator Messages notice when enabled");
     failures += expect_json_contains(json, "\"code\":\"startup-state-notice\"", "Seeded uninitialized storage notice should use the startup diagnostic code");
     failures += expect_json_contains(json, TEST_SEEDED_UNINITIALIZED_STORAGE_NOTICE_TEXT, "Seeded uninitialized storage notice should use exact Phase 57G wording");
-    failures += expect_json_not_contains(json, "Program Console", "Seeded uninitialized storage notice should not write Program Console output");
+    failures += expect_json_not_contains(json, "\"message\":\"Program Console", "Seeded uninitialized storage notice should not write Program Console output");
 
     return failures;
 }
@@ -13505,7 +13508,7 @@ static int test_phase50b_undefined_flag_use_warn_policy_source_run(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 50B source-run response should report current numeric runtime metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 50B source-run response should report current numeric runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Undefined flag-use warn policy should allow execution to continue");
     failures += expect_json_contains(json, "\"instructionCount\":6", "Warn policy should execute the existing ADC consumer");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "Warn policy should use deterministic preserved CF for ADC");
@@ -14107,7 +14110,7 @@ static int test_phase57m_segment_symbol_source_run(void) {
     failures += expect_json_contains(offset_text_json, "MASM/object segment symbol", "OFFSET _TEXT diagnostic should explain segment symbol");
     failures += expect_json_contains(offset_text_json, "does not expose linker segment symbols or readable `.code` / section images", "OFFSET _TEXT diagnostic should not expose .code alias");
     failures += expect_json_not_contains(offset_text_json, "execution-complete", "OFFSET _TEXT should not complete");
-    failures += expect_json_not_contains(offset_text_json, "programConsole", "OFFSET _TEXT should not create Program Console output");
+    failures += expect_json_contains(offset_text_json, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "OFFSET _TEXT should not create Program Console output");
 
     failures += expect_json_contains(ptr_data_json, "\"code\":\"unsupported-segment-symbol\"", "DWORD PTR [_DATA] should use unsupported-segment-symbol code");
     failures += expect_json_contains(ptr_data_json, "Use declared data labels instead", "DWORD PTR [_DATA] diagnostic should recommend labels");
@@ -14120,12 +14123,12 @@ static int test_phase57m_segment_symbol_source_run(void) {
     failures += expect_json_contains(segment_def_json, "\"code\":\"unsupported-segment-symbol\"", "_TEXT SEGMENT should use unsupported-segment-symbol code");
     failures += expect_json_contains(segment_def_json, "MASM/object segment symbol", "_TEXT SEGMENT diagnostic should explain segment symbol");
     failures += expect_json_not_contains(segment_def_json, "execution-complete", "_TEXT SEGMENT should not execute");
-    failures += expect_json_not_contains(segment_def_json, "programConsole", "_TEXT SEGMENT should not create Program Console output");
+    failures += expect_json_contains(segment_def_json, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "_TEXT SEGMENT should not create Program Console output");
 
     failures += expect_json_contains(group_def_json, "\"code\":\"unsupported-segment-symbol\"", "DGROUP GROUP should use unsupported-segment-symbol code");
     failures += expect_json_contains(group_def_json, "MASM memory-model group concept", "DGROUP GROUP diagnostic should explain group concept");
     failures += expect_json_not_contains(group_def_json, "execution-complete", "DGROUP GROUP should not execute");
-    failures += expect_json_not_contains(group_def_json, "programConsole", "DGROUP GROUP should not create Program Console output");
+    failures += expect_json_contains(group_def_json, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "DGROUP GROUP should not create Program Console output");
 
     failures += expect_json_contains(casemap_all_json, "\"code\":\"unsupported-segment-symbol\"", "CASEMAP:ALL should diagnose _text as _TEXT");
     failures += expect_json_contains(casemap_none_exact_json, "\"code\":\"unsupported-segment-symbol\"", "CASEMAP:NONE exact _TEXT should still diagnose");
@@ -14162,7 +14165,7 @@ static int test_phase57corr1_const_cross_region_write_diagnostic_context(void) {
     int failures = 0;
 
     printf("PHASE 57-CORR1 source-run program exercised: phase57corr1-const-cross-region-write-overlap\n");
-    failures += expect_json_contains(json, "\"phase\":84", "Phase 57-CORR1 regression should report current runtime/source-run phase metadata");
+    failures += expect_json_contains(json, "\"phase\":85", "Phase 57-CORR1 regression should report current runtime/source-run phase metadata");
     failures += expect_json_contains(json, "\"ok\":false", "Phase 57-CORR1 cross-region .CONST write should fail");
     failures += expect_json_contains(json, "\"status\":\"execution-error\"", "Phase 57-CORR1 cross-region .CONST write should be an execution error");
     failures += expect_json_contains(json, "\"instructionCount\":3", "Phase 57-CORR1 failing write should stop after three completed instructions");
@@ -14514,7 +14517,7 @@ static int test_phase61_jmp_executes_after_prior_instruction(void) {
     int failures = 0;
 
     copy_source_run_json(json_copy, sizeof(json_copy), json);
-    failures += expect_json_contains(json_copy, "\"phase\":84", "JMP regression response should report current Phase 78 numeric phase metadata");
+    failures += expect_json_contains(json_copy, "\"phase\":85", "JMP regression response should report current Phase 78 numeric phase metadata");
     failures += expect_json_contains(json_copy, "\"ok\":true", "valid direct JMP should execute successfully");
     failures += expect_json_contains(json_copy, "\"status\":\"ok\"", "valid direct JMP should report OK status");
     failures += expect_json_contains(json_copy, "\"instructionCount\":4", "JMP program should count committed MOV, JMP, and target MOV");
@@ -14723,15 +14726,15 @@ static int test_phase61a_jmp_skips_memory_write_and_keeps_console_empty(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 61A skipped-write JMP fixture should complete successfully");
-    failures += expect_json_contains(json, "\"phase\":84", "current runtime should report numeric phase metadata");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 84 - INVOKE DWORD Argument Lowering and Cleanup\"", "Current runtime metadata should report the Phase 84 runtime phase name");
+    failures += expect_json_contains(json, "\"phase\":85", "current runtime should report numeric phase metadata");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 85 - Program Console Buffer and Stream Separation\"", "Current runtime metadata should report the Phase 85 runtime phase name");
     failures += expect_json_contains(json, "\"instructionCount\":3", "JMP plus target read should count as two committed instructions");
     failures += expect_json_contains(json, "\"executedInstructionCount\":3", "committed direct JMP should be included in executedInstructionCount");
     failures += expect_json_contains(json, "\"attemptedNextInstructionIndex\":null", "successful skipped-write JMP run should not report a blocked instruction");
     failures += expect_json_contains(json, "\"currentInstructionIndex\":2", "last committed instruction should be the target MOV after the skipped write");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0", "skipped memory write should leave value readable as zero");
     failures += expect_json_contains(json, "\"memoryChanges\":[]", "direct JMP fixture should have no successful memory changes from the skipped write");
-    failures += expect_json_not_contains(json, "programConsole", "direct JMP should not create Program Console output");
+    failures += expect_json_contains(json, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "direct JMP should not create Program Console output");
     failures += expect_json_not_contains(json, "branch-runtime-deferred", "valid direct JMP should not emit deferred branch diagnostics");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "successful direct-JMP hardening fixture should emit execution-complete");
 
@@ -15200,6 +15203,61 @@ static int test_phase64d_memory_change_source_attribution(void) {
     return failures;
 }
 
+/// Verifies Phase 85 Program Console stream separation in source-run JSON.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase85_program_console_source_run_separation(void) {
+    int failures = 0;
+    char success_json[TEST_JSON_COPY_CAPACITY];
+    char parse_error_json[TEST_JSON_COPY_CAPACITY];
+    char runtime_error_json[TEST_JSON_COPY_CAPACITY];
+
+    copy_source_run_json(success_json, sizeof(success_json), masm32_sim_wasm_run_source_json(
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 42\n"
+        "    exit\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(success_json, "\"ok\":true", "Phase 85 no-output program should execute successfully");
+    failures += expect_json_contains(success_json, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "Phase 85 no-output program should return an empty Program Console object");
+    failures += expect_json_contains(success_json, "\"simulatorMessages\":[", "Phase 85 no-output program should keep Simulator Messages separate");
+    failures += expect_json_contains(success_json, "execution-complete", "Phase 85 no-output program should still report execution-complete as a Simulator Message");
+    failures += expect_json_fragment_order(success_json, "\"programConsole\"", "\"simulatorMessages\"", "Program Console should serialize before Simulator Messages as a separate field");
+    failures += expect_json_not_contains(success_json, "\"message\":\"Program Console", "Simulator Messages should not contain Program Console display text");
+
+    copy_source_run_json(parse_error_json, sizeof(parse_error_json), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, missingSymbol\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(parse_error_json, "\"ok\":false", "Phase 85 assembly-error source should fail");
+    failures += expect_json_contains(parse_error_json, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "Phase 85 assembly errors should return an empty Program Console object");
+    failures += expect_json_contains(parse_error_json, "\"simulatorMessages\":[", "Phase 85 assembly errors should keep diagnostics in Simulator Messages");
+    failures += expect_json_contains(parse_error_json, "unknown-symbol", "Phase 85 assembly diagnostic code should remain in Simulator Messages");
+    failures += expect_json_fragment_order(parse_error_json, "\"programConsole\"", "\"simulatorMessages\"", "Assembly-error Program Console should remain separate from diagnostics");
+
+    copy_source_run_json(runtime_error_json, sizeof(runtime_error_json), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 1\n"
+        "    mov ebx, 0\n"
+        "    div ebx\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(runtime_error_json, "\"ok\":false", "Phase 85 runtime-error source should fail");
+    failures += expect_json_contains(runtime_error_json, TEST_EMPTY_PROGRAM_CONSOLE_FRAGMENT, "Phase 85 runtime errors should return an empty Program Console object");
+    failures += expect_json_contains(runtime_error_json, "divide-by-zero", "Phase 85 runtime diagnostic code should remain in Simulator Messages");
+    failures += expect_json_fragment_order(runtime_error_json, "\"programConsole\"", "\"simulatorMessages\"", "Runtime-error Program Console should remain separate from diagnostics");
+
+    return failures;
+}
+
 /// Identifies the stable source-run fixture family that owns one source-run test case.
 typedef enum SourceRunTestFamily {
     /// Core parser/runtime source-run integration fixtures not owned by a narrower family.
@@ -15527,9 +15585,9 @@ static int test_phase73_leave_source_run_semantics_and_diagnostics(void) {
         "END main\n"
     ));
     failures += expect_json_contains(direct_json, "\"ok\":true", "Phase 73 direct-frame LEAVE source-run program should complete");
-    failures += expect_json_contains(direct_json, "\"phase\":84", "Current metadata should report numeric Phase 84");
+    failures += expect_json_contains(direct_json, "\"phase\":85", "Current metadata should report numeric Phase 85");
     failures += expect_json_contains(direct_json, "\"phaseSuffix\":\"\"", "Current metadata should report empty suffix metadata");
-    failures += expect_json_contains(direct_json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Current metadata should report the Phase 84 output contract");
+    failures += expect_json_contains(direct_json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Current metadata should report the Phase 85 output contract");
     failures += expect_json_contains(direct_json, "\"EAX\":{\"hex\":\"0000007Bh\"", "LEAVE source-run should preserve EAX acceptance value");
     failures += expect_json_contains(direct_json, "\"EBP\":{\"hex\":\"00000000h\"", "LEAVE source-run should restore EBP from saved DWORD");
     failures += expect_json_contains(direct_json, "\"ESP\":{\"hex\":\"00500004h\"", "LEAVE source-run should set ESP to old EBP plus four");
@@ -15604,7 +15662,7 @@ static int test_phase73_leave_source_run_semantics_and_diagnostics(void) {
     return failures;
 }
 
-/// Verifies current source-run metadata exposes Phase 84 and the default callDepthLimit.
+/// Verifies current source-run metadata exposes Phase 85 and the default callDepthLimit.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_phase73_source_run_default_metadata_and_call_depth(void) {
@@ -15618,9 +15676,9 @@ static int test_phase73_source_run_default_metadata_and_call_depth(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":84", "Current default source-run metadata should report numeric phase");
+    failures += expect_json_contains(json, "\"phase\":85", "Current default source-run metadata should report numeric phase");
     failures += expect_json_contains(json, "\"phaseSuffix\":\"\"", "Current default source-run metadata should report suffix metadata");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 84 - INVOKE DWORD Argument Lowering and Cleanup\"", "Current default source-run metadata should report full Phase 84 name");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 85 - Program Console Buffer and Stream Separation\"", "Current default source-run metadata should report full Phase 85 name");
     failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Current default source-run metadata should report current output contract");
     failures += expect_json_contains(json, "\"callDepthLimit\":64", "default source-run JSON should expose callDepthLimit 64");
     failures += expect_json_not_contains(json, "call-trace-truncated", "default current source-run JSON should not emit call trace metadata");
@@ -15656,7 +15714,7 @@ static int test_phase74_ret_imm16_source_run_semantics_and_diagnostics(void) {
         "END main\n"
     ));
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 74 RET imm16 acceptance source-run program should complete");
-    failures += expect_json_contains(acceptance_json, "\"phase\":84", "Phase 74 RET imm16 regression should report current numeric phase");
+    failures += expect_json_contains(acceptance_json, "\"phase\":85", "Phase 74 RET imm16 regression should report current numeric phase");
     failures += expect_json_contains(acceptance_json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 74 RET imm16 regression should report current output contract");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000005h\"", "Phase 74 RET imm16 callee should leave EBX at 5");
     failures += expect_json_contains(acceptance_json, "\"EAX\":{\"hex\":\"00900000h\"", "Phase 74 RET imm16 caller should observe restored ESP in EAX");
@@ -16106,9 +16164,9 @@ static int test_phase78a_nokeyword_source_run(void) {
         "END main\n"
     ));
     failures += expect_json_contains(success_json, "\"ok\":true", "Phase 78A accepted OPTION NOKEYWORD source should run");
-    failures += expect_json_contains(success_json, "\"phase\":84", "Current metadata should report numeric Phase 84");
+    failures += expect_json_contains(success_json, "\"phase\":85", "Current metadata should report numeric Phase 85");
     failures += expect_json_contains(success_json, "\"phaseSuffix\":\"\"", "Current metadata should report an empty suffix");
-    failures += expect_json_contains(success_json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Current metadata should report the Phase 84 output contract");
+    failures += expect_json_contains(success_json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Current metadata should report the Phase 85 output contract");
     failures += expect_json_contains(success_json, "\"EAX\":{\"hex\":\"00001234h\"", "disabled OFFSET data symbol should load normally");
     failures += expect_json_contains(success_json, "\"EBX\":{\"hex\":\"00000005h\"", "disabled LOOP data symbol should load normally");
     failures += expect_json_not_contains(success_json, "unsupported-option", "accepted Phase 78A OPTION NOKEYWORD source should not use unsupported-option");
@@ -16208,7 +16266,7 @@ static int test_phase79_local_frame_source_run(void) {
         "END main\n"
     ));
     failures += expect_json_contains(success_json, "\"ok\":true", "Phase 79 LOCAL frame source should execute supported non-local instructions");
-    failures += expect_json_contains(success_json, "\"phase\":84", "Phase 79 LOCAL frame source should report current numeric phase");
+    failures += expect_json_contains(success_json, "\"phase\":85", "Phase 79 LOCAL frame source should report current numeric phase");
     failures += expect_json_contains(success_json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 79 LOCAL frame source should report current output contract");
     failures += expect_json_contains(success_json, "\"EAX\":{\"hex\":\"00001234h\",\"unsigned\":4660}", "Phase 79 LOCAL frame source should preserve ordinary execution");
     failures += expect_json_not_contains(success_json, "unsupported-feature", "valid Phase 79 LOCAL declarations should not be generic unsupported features");
@@ -16880,6 +16938,7 @@ static const SourceRunTestCase SOURCE_RUN_TEST_CASES[] = {
     {"test_phase72_exact_call_depth_limit_source_run", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase72_exact_call_depth_limit_source_run},
     {"test_phase72_invalid_call_depth_limit_source_run", SOURCE_RUN_TEST_SETTINGS, test_phase72_invalid_call_depth_limit_source_run},
     {"test_phase82_zero_argument_invoke_source_run_semantics", SOURCE_RUN_TEST_CORE, test_phase82_zero_argument_invoke_source_run_semantics},
+    {"test_phase85_program_console_source_run_separation", SOURCE_RUN_TEST_CORE, test_phase85_program_console_source_run_separation},
     {"test_current_source_run_phase_metadata", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_current_source_run_phase_metadata},
     {"test_phase81_proto_source_run_non_effect", SOURCE_RUN_TEST_CORE, test_phase81_proto_source_run_non_effect},
     {"test_phase71b_source_run_diagnostic_wording_cleanup", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase71b_source_run_diagnostic_wording_cleanup},
@@ -16985,7 +17044,7 @@ int main(int argc, char **argv) {
     if (has_filter) {
         printf("Source-run %s fixture-family tests passed (%lu fixtures).\n", source_run_family_name(requested_family), (unsigned long)selected_count);
     } else {
-        puts("Source execution tests through Phase 84 INVOKE DWORD argument behavior passed.");
+        puts("Source execution tests through Phase 85 Program Console stream separation passed.");
     }
     return 0;
 }

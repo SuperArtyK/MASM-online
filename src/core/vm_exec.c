@@ -5178,8 +5178,14 @@ VmExecStatus vm_init_with_layout_policy(Vm *vm, const VmLayoutPolicy *layout_pol
     vm->entry_procedure_end_mode = VM_ENTRY_PROCEDURE_END_MODE_CODE_STREAM;
     vm->call_depth_limit = VM_DEFAULT_CALL_DEPTH_LIMIT;
     vm_cpu_init(&vm->cpu);
+    if (vm_console_init(&vm->program_console) != VM_CONSOLE_STATUS_OK) {
+        vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_INVALID_ARGUMENT);
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
     memory_status = vm_memory_init_with_layout_policy(&vm->memory, layout_policy);
     if (memory_status != VM_MEMORY_STATUS_OK) {
+        vm_console_deinit(&vm->program_console);
         vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_MEMORY_ERROR);
         vm->last_diagnostic.memory_status = memory_status;
         return VM_EXEC_STATUS_MEMORY_ERROR;
@@ -5188,6 +5194,8 @@ VmExecStatus vm_init_with_layout_policy(Vm *vm, const VmLayoutPolicy *layout_pol
     {
         VmExecStatus stack_status = vm_initialize_stack_pointer(vm);
         if (stack_status != VM_EXEC_STATUS_OK) {
+            vm_console_deinit(&vm->program_console);
+            vm_memory_deinit(&vm->memory);
             return stack_status;
         }
     }
@@ -5216,8 +5224,14 @@ VmExecStatus vm_init(Vm *vm, const VmMemoryConfig *memory_config) {
     vm->entry_procedure_end_mode = VM_ENTRY_PROCEDURE_END_MODE_CODE_STREAM;
     vm->call_depth_limit = VM_DEFAULT_CALL_DEPTH_LIMIT;
     vm_cpu_init(&vm->cpu);
+    if (vm_console_init(&vm->program_console) != VM_CONSOLE_STATUS_OK) {
+        vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_INVALID_ARGUMENT);
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
     memory_status = vm_memory_init(&vm->memory, memory_config);
     if (memory_status != VM_MEMORY_STATUS_OK) {
+        vm_console_deinit(&vm->program_console);
         vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_MEMORY_ERROR);
         vm->last_diagnostic.memory_status = memory_status;
         return VM_EXEC_STATUS_MEMORY_ERROR;
@@ -5226,6 +5240,8 @@ VmExecStatus vm_init(Vm *vm, const VmMemoryConfig *memory_config) {
     {
         VmExecStatus stack_status = vm_initialize_stack_pointer(vm);
         if (stack_status != VM_EXEC_STATUS_OK) {
+            vm_console_deinit(&vm->program_console);
+            vm_memory_deinit(&vm->memory);
             return stack_status;
         }
     }
@@ -5366,11 +5382,16 @@ uint32_t vm_current_call_depth(const Vm *vm) {
     return vm->current_call_depth > (size_t)UINT32_MAX ? UINT32_MAX : (uint32_t)vm->current_call_depth;
 }
 
+const VmConsole *vm_program_console(const Vm *vm) {
+    return vm != NULL ? &vm->program_console : NULL;
+}
+
 void vm_deinit(Vm *vm) {
     if (vm == NULL) {
         return;
     }
 
+    vm_console_deinit(&vm->program_console);
     vm_memory_deinit(&vm->memory);
     vm->program = NULL;
     vm->program_count = 0U;
@@ -5397,6 +5418,7 @@ VmExecStatus vm_load_program(Vm *vm, const VmIrInstruction *program, size_t prog
             return stack_status;
         }
     }
+    (void)vm_console_reset(&vm->program_console);
     vm_memory_clear_changes(&vm->memory);
     vm->program = program;
     vm->program_count = program_count;

@@ -39,6 +39,7 @@
 #include "vm_cpu.h"
 #include "vm_ir.h"
 #include "vm_memory.h"
+#include "vm_console.h"
 
 /// Maximum canonical register changes retained in one step delta.
 #define VM_EXEC_MAX_REGISTER_CHANGES 9U
@@ -454,6 +455,8 @@ typedef struct Vm {
     VmCpu cpu;
     /// Checked simulated memory regions.
     VmMemory memory;
+    /// Simulated Program Console output stream, separate from Simulator Messages.
+    VmConsole program_console;
     /// Loaded IR instruction array owned by the caller.
     const VmIrInstruction *program;
     /// Number of instructions in @ref program.
@@ -661,6 +664,12 @@ uint32_t vm_current_call_depth(const Vm *vm);
 /// @param vm VM instance to inspect.
 /// @return Pointer to the VM-owned diagnostic record, or NULL when @p vm is NULL.
 const VmProcedureFallthroughDiagnostic *vm_last_procedure_fallthrough_diagnostic(const Vm *vm);
+
+/// Returns the Program Console stream owned by a VM.
+///
+/// @param vm VM instance to inspect.
+/// @return Pointer to the VM-owned Program Console, or NULL when @p vm is NULL.
+const VmConsole *vm_program_console(const Vm *vm);
 
 /// Releases resources owned by a VM instance.
 ///

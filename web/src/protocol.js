@@ -16,16 +16,16 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 /** @typedef {{runSource?: (source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown}} WorkerRuntime */
 
 /** Latest numeric MASM source-run phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE = 84;
+export const IMPLEMENTED_PHASE = 85;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
 export const IMPLEMENTED_PHASE_SUFFIX = "";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 84 - INVOKE DWORD Argument Lowering and Cleanup";
+export const IMPLEMENTED_PHASE_NAME = "Phase 85 - Program Console Buffer and Stream Separation";
 
 /** Source-run JSON output-contract identifier expected by the current browser/protocol layer. */
-export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-84-invoke-dword-argument-output-contract-v1";
+export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-85-program-console-stream-output-contract-v1";
 
 /**
  * Creates the initial worker readiness response.
@@ -95,6 +95,39 @@ function createRunSourceUnavailableError() {
 }
 
 /**
+ * Creates an empty Program Console payload for source-run-style UI errors.
+ *
+ * @returns {{text: string, truncated: boolean, byteCount: number, lineCount: number}} Empty Program Console stream.
+ */
+function createEmptyProgramConsole() {
+  return {
+    text: "",
+    truncated: false,
+    byteCount: 0,
+    lineCount: 0
+  };
+}
+
+/**
+ * Ensures a RUN_RESULT-like payload has a Program Console stream field.
+ *
+ * @param {unknown} runResult Candidate source-run result.
+ * @returns {unknown} Result with an empty Program Console object when appropriate.
+ */
+function ensureProgramConsoleField(runResult) {
+  if (!runResult || typeof runResult !== "object") {
+    return runResult;
+  }
+  if (runResult.programConsole && typeof runResult.programConsole === "object") {
+    return runResult;
+  }
+  return {
+    ...runResult,
+    programConsole: createEmptyProgramConsole()
+  };
+}
+
+/**
  * Creates a source-run-style result for a UI settings validation failure.
  *
  * @param {unknown} diagnostic Structured UI diagnostic to render.
@@ -107,6 +140,7 @@ function createInvalidDiagnosticSettingsRunResult(diagnostic) {
       ok: false,
       status: "ui-error",
       simulatorMessages: [diagnostic],
+      programConsole: createEmptyProgramConsole(),
       registers: {},
       memoryChanges: []
     }
@@ -205,10 +239,10 @@ function addStaleWasmDiagnosticIfNeeded(runResult) {
   }
 
   const messages = Array.isArray(runResult.simulatorMessages) ? runResult.simulatorMessages : [];
-  return {
+  return ensureProgramConsoleField({
     ...runResult,
     simulatorMessages: [...diagnostics, ...messages]
-  };
+  });
 }
 
 /**
@@ -239,7 +273,7 @@ function handleRunSourceRequest(request, runtime) {
   try {
     return {
       type: "RUN_RESULT",
-      payload: addStaleWasmDiagnosticIfNeeded(runtime.runSource(payload.source, normalizedSettings.backendSettings))
+      payload: ensureProgramConsoleField(addStaleWasmDiagnosticIfNeeded(runtime.runSource(payload.source, normalizedSettings.backendSettings)))
     };
   } catch (error) {
     return {

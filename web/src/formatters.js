@@ -2,10 +2,10 @@
  * @file formatters.js
  * @brief Pure UI formatting helpers for browser output and diagnostic tests.
  *
- * These helpers format final register state, simulator diagnostics, and
- * symbol-aware memory changes returned by the worker. They are isolated from
- * DOM and Worker setup so they can be covered by Node.js tests without browser
- * automation.
+ * These helpers format final register state, simulator diagnostics, Program
+ * Console text, and symbol-aware memory changes returned by the worker. They
+ * are isolated from DOM and Worker setup so they can be covered by Node.js
+ * tests without browser automation.
  */
 
 /** @typedef {{hex: string, unsigned: number}} RegisterValue */
@@ -13,6 +13,7 @@
 /** @typedef {Record<string, boolean>} RegisterWriteMap */
 /** @typedef {Record<string, string>} RegisterRoleMap */
 /** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number, byteOffset?: number, spanLength?: number, procedure?: string, operationStage?: string, relevantByteCount?: number, relevantAddress?: number}} SimulatorMessage */
+/** @typedef {{text?: string, truncated?: boolean, byteCount?: number, lineCount?: number}} ProgramConsole */
 /** @typedef {{symbol?: string, dataType?: string, widthBits?: number, byteOffset?: number, elementIndex?: number, oldHex?: string, oldUnsigned?: number, newHex?: string, newUnsigned?: number, sourceLine?: number, sourceText?: string}} MemoryChange */
 
 /** Zero-based EFLAGS bit index for the currently modeled carry flag. */
@@ -825,6 +826,27 @@ export function formatMemoryChangeLine(change) {
     lines.push(infoRow);
   }
   return lines.join("\n");
+}
+
+
+/**
+ * Formats the simulated Program Console stream returned by a RUN_RESULT response.
+ *
+ * Program Console text is simulated program I/O only. Diagnostics, notices,
+ * worker status, and simulator-generated messages must be formatted through
+ * Simulator Messages instead. Missing or malformed Program Console payloads
+ * render as empty output so stale or error paths do not leak diagnostics into
+ * the simulated program stream.
+ *
+ * @param {ProgramConsole | undefined} programConsole Program Console payload.
+ * @returns {string} Text to display in the Program Console panel.
+ */
+export function formatProgramConsole(programConsole) {
+  if (!programConsole || typeof programConsole.text !== "string") {
+    return "";
+  }
+
+  return programConsole.text;
 }
 
 /**

@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 84: INVOKE DWORD Argument Lowering and Cleanup.
+  Milestone 85: Program Console Buffer and Stream Separation.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,23 +18,16 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 84: INVOKE DWORD Argument Lowering and Cleanup</p>
+        <p class="muted">Milestone 85: Program Console Buffer and Stream Separation</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
-Helper PROTO a:DWORD, b:DWORD
 .data
-value DWORD 3
+value DWORD 42
 .code
 main PROC
-    INVOKE Helper, 2, value
+    mov eax, value
     exit
 main ENDP
-
-Helper PROC
-    mov eax, [esp + 4]
-    add eax, [esp + 8]
-    ret 8
-Helper ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">
           <button
