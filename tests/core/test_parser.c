@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for parser behavior through Phase 84 INVOKE DWORD argument coverage.
+ * @brief Unit and integration tests for parser behavior through Phase 87 Irvine32 Crlf coverage.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
@@ -8,7 +8,7 @@
  * Phase 67A procedure-range metadata, Phase 68 call-target classification
  * metadata, Phase 68B EIP source-operand restrictions, Phase 69 direct CALL,
  * Phase 70 plain near RET, Phase 72A source-level PUSH/POP, Phase 73
- * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, Phase 78 LOCAL parser metadata, Phase 78A limited OPTION NOKEYWORD support, Phase 81 PROTO metadata, Phase 82 zero-argument INVOKE parsing and targeted INVOKE diagnostics, Phase 83 helper-level ADDR record preparation, Phase 84 INVOKE DWORD argument parsing, unsupported syntax, INCLUDELIB non-goal diagnostics,
+ * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, Phase 78 LOCAL parser metadata, Phase 78A limited OPTION NOKEYWORD support, Phase 81 PROTO metadata, Phase 82 zero-argument INVOKE parsing and targeted INVOKE diagnostics, Phase 83 helper-level ADDR record preparation, Phase 84 INVOKE DWORD argument parsing, Phase 87 virtual Irvine32 Crlf parser paths, unsupported syntax, INCLUDELIB non-goal diagnostics,
  * and integration with the current executor
  * without adding future execution behavior.
  */
@@ -1443,6 +1443,18 @@ static int test_phase69_direct_call_target_rejections(void) {
         "INCLUDE Irvine32.inc\n"
         ".code\n"
         "main PROC\n"
+        "    call WriteChar\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL WriteChar target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "CALL WriteChar target should remain deferred");
+
+    failures += expect_parser_status(parse_for_test(
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
         "    call ExitProcess\n"
         "main ENDP\n"
         "END main\n",
@@ -1585,6 +1597,8 @@ static int test_phase68_procedure_name_diagnostics(void) {
     static const char *reserved_sources[] = {
         ".code\nWriteString PROC\nWriteString ENDP\nEND WriteString\n",
         ".code\nwritestring PROC\nwritestring ENDP\nEND writestring\n",
+        ".code\nCrlf PROC\nCrlf ENDP\nEND Crlf\n",
+        ".code\ncrlf PROC\ncrlf ENDP\nEND crlf\n",
         ".code\nmov PROC\nmov ENDP\nEND mov\n",
         ".code\neax PROC\neax ENDP\nEND eax\n",
         ".code\nDWORD PROC\nDWORD ENDP\nEND DWORD\n",
@@ -4471,6 +4485,8 @@ static int test_phase41_virtual_irvine32_include_records_registry(void) {
     }
 
     failures += expect_u32(vm_parser_classify_irvine32_symbol("exit", 4U), VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC, "exit should be a supported virtual intrinsic in Phase 42");
+    failures += expect_u32(vm_parser_classify_irvine32_symbol("Crlf", 4U), VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE, "Crlf should be a supported Irvine32 routine in Phase 87");
+    failures += expect_u32(vm_parser_classify_irvine32_symbol("cRlF", 4U), VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE, "Crlf lookup should remain case-insensitive");
     failures += expect_u32(vm_parser_classify_irvine32_symbol("WriteString", 11U), VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "WriteString should be a planned Irvine32 routine");
     failures += expect_u32(vm_parser_classify_irvine32_symbol("writestring", 11U), VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "Irvine32 routine lookup should be case-insensitive");
     failures += expect_u32(vm_parser_classify_irvine32_symbol("OpenInputFile", 13U), VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE, "file I/O routines should be known unsupported routines");
@@ -4879,6 +4895,94 @@ static int test_phase41_irvine32_routine_diagnostics(void) {
     return failures;
 }
 
+
+
+/// Verifies Phase 87 accepts virtual Irvine32 Crlf through CALL and zero-argument INVOKE only.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase87_irvine32_crlf_parser_paths(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    const char *accepted_source =
+        "INCLUDE Irvine32.inc\n"
+        "OPTION CASEMAP:NONE\n"
+        ".code\n"
+        "main PROC\n"
+        "    call Crlf\n"
+        "    CALL cRlF\n"
+        "    invoke Crlf\n"
+        "    INVOKE CRLF\n"
+        "    exit\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *without_include =
+        ".code\n"
+        "main PROC\n"
+        "    call Crlf\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *invoke_without_include =
+        ".code\n"
+        "main PROC\n"
+        "    invoke Crlf\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *invoke_arguments =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    invoke Crlf, eax\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *bare_crlf =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    Crlf\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *deferred_write_string =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    call WriteString\n"
+        "main ENDP\n"
+        "END main\n";
+
+    failures += expect_parser_status(parse_for_test(accepted_source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 87 Crlf CALL and zero-argument INVOKE forms should parse");
+    failures += expect_size(result.diagnostic_count, 0U, "accepted Crlf forms should not emit diagnostics");
+    failures += expect_size(result.instruction_count, 5U, "accepted source should emit four Crlf instructions plus exit");
+    if (result.instruction_count >= 5U) {
+        failures += expect_u32((uint32_t)buffers.instructions[0].opcode, (uint32_t)VM_IR_OPCODE_IRVINE32_CRLF, "call Crlf should lower to the Crlf IR opcode");
+        failures += expect_u32((uint32_t)buffers.instructions[1].opcode, (uint32_t)VM_IR_OPCODE_IRVINE32_CRLF, "mixed-case CALL Crlf should lower to the Crlf IR opcode under CASEMAP:NONE");
+        failures += expect_u32((uint32_t)buffers.instructions[2].opcode, (uint32_t)VM_IR_OPCODE_IRVINE32_CRLF, "invoke Crlf should lower to the Crlf IR opcode");
+        failures += expect_u32((uint32_t)buffers.instructions[3].opcode, (uint32_t)VM_IR_OPCODE_IRVINE32_CRLF, "uppercase INVOKE CRLF should lower to the Crlf IR opcode");
+        failures += expect_u32((uint32_t)buffers.instructions[4].opcode, (uint32_t)VM_IR_OPCODE_EXIT, "exit should remain the final instruction");
+    }
+
+    failures += expect_parser_status(parse_for_test(without_include, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Crlf CALL without Irvine32 include should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_MISSING_IRVINE32_INCLUDE, "CALL Crlf without include should use the missing Irvine32 include diagnostic");
+    failures += expect_string(buffers.diagnostics[0].message, "CALL Crlf requires INCLUDE Irvine32.inc before Crlf can be used as a virtual Irvine32 routine.", "CALL Crlf without include diagnostic should give the exact required fix");
+
+    failures += expect_parser_status(parse_for_test(invoke_without_include, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "INVOKE Crlf without Irvine32 include should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_MISSING_IRVINE32_INCLUDE, "INVOKE Crlf without include should use the missing Irvine32 include diagnostic");
+    failures += expect_string(buffers.diagnostics[0].message, "INVOKE Crlf requires INCLUDE Irvine32.inc before Crlf can be used as a virtual Irvine32 routine.", "INVOKE Crlf without include diagnostic should give the exact required fix");
+
+    failures += expect_parser_status(parse_for_test(invoke_arguments, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "INVOKE Crlf with arguments should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_ARGUMENT_COUNT, "INVOKE Crlf with arguments should use the Crlf argument-count diagnostic");
+    failures += expect_string(buffers.diagnostics[0].message, "INVOKE Crlf takes no arguments. Remove the argument list or use CALL Crlf.", "INVOKE Crlf diagnostic should preserve zero-argument contract and fix guidance");
+
+    failures += expect_parser_status(parse_for_test(bare_crlf, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Bare Crlf form should remain invalid after Phase 87");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_CALL_FORM, "Bare Crlf should use the invalid Irvine32 call-form diagnostic");
+    failures += expect_string(buffers.diagnostics[0].message, "Crlf is a virtual Irvine32 routine and must be called with CALL Crlf or zero-argument INVOKE Crlf.", "Bare Crlf diagnostic should state the supported source forms");
+
+    failures += expect_parser_status(parse_for_test(deferred_write_string, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "WriteString CALL should remain deferred after Phase 87");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "WriteString CALL should keep Irvine32 deferred diagnostic");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "deferred", "WriteString diagnostic should still say deferred");
+
+    return failures;
+}
 
 /// Verifies Phase 43 INC and DEC parser acceptance and IR shapes.
 ///
@@ -7934,6 +8038,15 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE), "unsupported-irvine32-routine") != 0) {
         failures += record_failure("parser diagnostic helper should name unsupported Irvine32 routine diagnostics");
     }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_MISSING_IRVINE32_INCLUDE), "missing-irvine32-include") != 0) {
+        failures += record_failure("parser diagnostic helper should name missing Irvine32 include diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_ARGUMENT_COUNT), "invalid-irvine32-argument-count") != 0) {
+        failures += record_failure("parser diagnostic helper should name invalid Irvine32 argument-count diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_CALL_FORM), "invalid-irvine32-call-form") != 0) {
+        failures += record_failure("parser diagnostic helper should name invalid Irvine32 call-form diagnostics");
+    }
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_COMPATIBILITY_NO_OP), "compatibility-no-op") != 0) {
         failures += record_failure("parser diagnostic helper should name compatibility no-op notices");
     }
@@ -7969,6 +8082,9 @@ static int test_metadata_helpers(void) {
     }
     if (strcmp(vm_parser_irvine32_symbol_class_name(VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC), "supported-virtual-intrinsic") != 0) {
         failures += record_failure("Irvine32 symbol-class helper should name supported virtual intrinsics");
+    }
+    if (strcmp(vm_parser_irvine32_symbol_class_name(VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE), "supported-routine") != 0) {
+        failures += record_failure("Irvine32 symbol-class helper should name supported routines");
     }
     if (strcmp(vm_parser_irvine32_symbol_class_name(VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE), "planned-routine") != 0) {
         failures += record_failure("Irvine32 symbol-class helper should name planned routines");
@@ -8704,6 +8820,7 @@ int main(void) {
     failures += test_phase83_addr_argument_diagnostics();
     failures += test_phase41_irvine32_routine_diagnostics();
     failures += test_phase42_irvine32_exit_terminator_parser_paths();
+    failures += test_phase87_irvine32_crlf_parser_paths();
     failures += test_phase43_inc_dec_parse_to_ir();
     failures += test_phase43_inc_dec_parse_error_paths();
     failures += test_phase44_logical_binary_parse_to_ir();
@@ -8748,6 +8865,6 @@ int main(void) {
         return 1;
     }
 
-    printf("Parser tests through Phase 84 INVOKE DWORD argument coverage passed.\n");
+    printf("Parser tests through Phase 87 Irvine32 Crlf coverage passed.\n");
     return 0;
 }

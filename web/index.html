@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 86: Program Console Output Limits and Serialization.
+  Milestone 87: Irvine32 Crlf.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,7 +18,7 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 86: Program Console Output Limits and Serialization</p>
+        <p class="muted">Milestone 87: Irvine32 Crlf</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
 .data
@@ -26,6 +26,8 @@ value DWORD 42
 .code
 main PROC
     mov eax, value
+    call Crlf
+    INVOKE Crlf
     exit
 main ENDP
 END main</textarea>

@@ -14,13 +14,13 @@
  * metadata diagnostics, Phase 76 PROC USES parsing metadata, Phase 78 LOCAL
  * declaration metadata, and Phase 78A limited OPTION NOKEYWORD metadata, Phase 81 PROTO
  * declaration metadata, Phase 82 zero-argument INVOKE lowering, Phase 83
- * ADDR helper records, and Phase 84 limited INVOKE DWORD argument lowering are
- * supported; the Phase 79 executor uses parser-owned LOCAL metadata to create
+ * ADDR helper records, Phase 84 limited INVOKE DWORD argument lowering, and
+ * Phase 87 virtual Irvine32 Crlf CALL/INVOKE lowering are supported; the Phase 79 executor uses parser-owned LOCAL metadata to create
  * automatic runtime frames, and Phase 80 lowers supported source-level LOCAL
  * operands to frame-relative runtime addresses. Accepted PROC remains
  * metadata-only for unsupported non-USES PROC tails. ENTER, scaled-index
  * addressing, general source-level ADDR outside accepted INVOKE arguments,
- * Irvine32 routine bodies, and full MASM expression parsing remain later
+ * Irvine32 routine bodies beyond Crlf, and full MASM expression parsing remain later
  * milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
  * host files or linking external libraries. Recognizable textbook
@@ -338,6 +338,8 @@ typedef enum VmParserMemoryWidthResolutionStatus {
 
 static bool vm_parser_token_can_name_data_symbol(const VmLexerToken *token);
 
+static bool vm_parser_token_is_irvine32_crlf(const VmLexerToken *token);
+
 static const VmLexerToken *vm_parser_current_token(const VmParserState *state);
 
 static const VmLexerToken *vm_parser_peek_token(const VmParserState *state, size_t offset);
@@ -497,7 +499,7 @@ static char vm_parser_ascii_upper(char ch) {
 /// Virtual Irvine32 names recognized once `INCLUDE Irvine32.inc` is active.
 static const VmParserIrvine32RegistryEntry VM_PARSER_IRVINE32_REGISTRY[] = {
     {"exit", VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC},
-    {"Crlf", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"Crlf", VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE},
     {"WriteChar", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
     {"WriteString", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
     {"WriteDec", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
@@ -8829,6 +8831,7 @@ static bool vm_parser_classify_immediate_invoke_non_goal(
     }
 
     if (irvine_class == VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC ||
+        irvine_class == VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE ||
         irvine_class == VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE ||
         irvine_class == VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE) {
         *out_code = VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE_INVOKE;
@@ -8974,6 +8977,18 @@ static bool vm_parser_parse_direct_call_instruction(VmParserState *state, const 
             target_token,
             "CALL OFFSET targets are not implemented. This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode."
         );
+    }
+
+    if (vm_parser_token_is_irvine32_crlf(target_token)) {
+        if (!state->result->has_irvine32_virtual_include) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_MISSING_IRVINE32_INCLUDE, target_token, "CALL Crlf requires INCLUDE Irvine32.inc before Crlf can be used as a virtual Irvine32 routine.");
+            return false;
+        }
+        vm_parser_advance(state);
+        if (!vm_parser_expect_line_end(state)) {
+            return false;
+        }
+        return vm_parser_emit_instruction(state, VM_IR_OPCODE_IRVINE32_CRLF, vm_ir_operand_none(), vm_ir_operand_none(), mnemonic_token);
     }
 
     vm_parser_advance(state);
@@ -9427,6 +9442,16 @@ static bool vm_parser_token_is_exit_terminator(const VmLexerToken *token) {
            vm_parser_token_equals(token, "exit");
 }
 
+/// Returns whether a token names the virtual Irvine32 `Crlf` routine.
+///
+/// @param token Token to inspect.
+/// @return true when @p token is an identifier spelling `Crlf` case-insensitively.
+static bool vm_parser_token_is_irvine32_crlf(const VmLexerToken *token) {
+    return token != NULL &&
+           token->kind == VM_LEXER_TOKEN_IDENTIFIER &&
+           vm_parser_token_equals(token, "Crlf");
+}
+
 /// Emits an unsupported-routine diagnostic for a virtual Irvine32 symbol when possible.
 ///
 /// The registry is active only after `INCLUDE Irvine32.inc`. Direct CALL
@@ -9453,6 +9478,11 @@ static bool vm_parser_diagnose_irvine32_symbol_use_if_known(VmParserState *state
 
     if (symbol_class == VM_IRVINE32_SYMBOL_CLASS_WINDOWS_API_OR_EXTERNAL) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, mnemonic_token, "Recognized external or Windows API name from Irvine32 context. Windows/API execution and linking are not supported.");
+        return true;
+    }
+
+    if (symbol_class == VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_CALL_FORM, mnemonic_token, "Crlf is a virtual Irvine32 routine and must be called with CALL Crlf or zero-argument INVOKE Crlf.");
         return true;
     }
 
@@ -9723,6 +9753,30 @@ static bool vm_parser_parse_invoke_instruction(VmParserState *state, const VmLex
         );
         vm_parser_recover_skip_line(state);
         return true;
+    }
+
+    if (vm_parser_token_is_irvine32_crlf(target_token)) {
+        vm_parser_advance(state);
+        if (!state->result->has_irvine32_virtual_include) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_MISSING_IRVINE32_INCLUDE, target_token, "INVOKE Crlf requires INCLUDE Irvine32.inc before Crlf can be used as a virtual Irvine32 routine.");
+            vm_parser_recover_skip_line(state);
+            return true;
+        }
+        if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+            const VmLexerToken *argument_token = vm_parser_current_token(state);
+            if (argument_token != NULL && argument_token->kind == VM_LEXER_TOKEN_COMMA &&
+                vm_parser_peek_token(state, 1U) != NULL &&
+                !vm_parser_is_line_end_token(vm_parser_peek_token(state, 1U))) {
+                argument_token = vm_parser_peek_token(state, 1U);
+            }
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_ARGUMENT_COUNT, argument_token, "INVOKE Crlf takes no arguments. Remove the argument list or use CALL Crlf.");
+            vm_parser_recover_skip_line(state);
+            return true;
+        }
+        if (!vm_parser_expect_line_end(state)) {
+            return false;
+        }
+        return vm_parser_emit_instruction(state, VM_IR_OPCODE_IRVINE32_CRLF, vm_ir_operand_none(), vm_ir_operand_none(), mnemonic_token);
     }
 
     vm_parser_advance(state);
@@ -13233,6 +13287,8 @@ const char *vm_parser_irvine32_symbol_class_name(VmIrvine32SymbolClass symbol_cl
             return "unknown";
         case VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC:
             return "supported-virtual-intrinsic";
+        case VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE:
+            return "supported-routine";
         case VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE:
             return "planned-routine";
         case VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE:
@@ -13320,6 +13376,7 @@ static bool vm_parser_metadata_name_matches_policy(
 static VmParserCallTargetClass vm_parser_call_target_class_from_irvine32_class(VmIrvine32SymbolClass symbol_class) {
     switch (symbol_class) {
         case VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC:
+        case VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE:
             return VM_PARSER_CALL_TARGET_IRVINE32_SUPPORTED;
         case VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE:
             return VM_PARSER_CALL_TARGET_IRVINE32_PLANNED;
@@ -13908,6 +13965,12 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "proto-proc-mismatch";
         case VM_PARSER_DIAGNOSTIC_PROTO_CAPACITY_EXCEEDED:
             return "proto-capacity-exceeded";
+        case VM_PARSER_DIAGNOSTIC_MISSING_IRVINE32_INCLUDE:
+            return "missing-irvine32-include";
+        case VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_ARGUMENT_COUNT:
+            return "invalid-irvine32-argument-count";
+        case VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_CALL_FORM:
+            return "invalid-irvine32-call-form";
         default:
             return NULL;
     }

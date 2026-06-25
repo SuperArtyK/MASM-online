@@ -18,16 +18,27 @@ Recent milestone detail in this file may be listed most-recent-first for handoff
 The canonical implementation order, phase numbering, phase tasks, required tests, and acceptance criteria remain in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Future assistants must not infer phase dependencies or next implementation work from the order of recent-history paragraphs in this file when the guide states a different order.
 
 Latest recorded completed milestone in this history file:
-Phase 86 - Program Console Output Limits and Serialization
+Phase 87 - Irvine32 Crlf
 
 Latest recorded runtime/source-run MASM behavior phase in this history file:
-Phase 86 - Program Console Output Limits and Serialization
+Phase 87 - Irvine32 Crlf
 
 This history file records completed milestones and audit evidence. It is not the phase-order authority and not a replacement for `docs/FULL_IMPLEMENTATION_SPEC.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, `docs/SUPPORTED_SYNTAX.md`, current repository code, or current tests. If this history file is not updated during a later milestone, its `latest recorded` lines may be older than the active repository state. Use the implementation guide and latest accepted milestone evidence to determine the next canonical implementation phase.
 
-Forward-looking phase navigation is guide-owned. At the time this history entry was updated, Phase 86 had been implemented as Program Console output-limit and serialization infrastructure while preserving Phase 85 separate Program Console stream infrastructure, Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering, Phase 83 helper-level ADDR preparation, and Phase 82 zero-argument `INVOKE` behavior. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
+Forward-looking phase navigation is guide-owned. At the time this history entry was updated, Phase 87 had been implemented as virtual Irvine32 `Crlf` Program Console output while preserving Phase 86 Program Console output-limit and serialization infrastructure while preserving Phase 85 separate Program Console stream infrastructure, Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering, Phase 83 helper-level ADDR preparation, and Phase 82 zero-argument `INVOKE` behavior. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
 
 Corrective artifact-evidence note for Phase 71B: the latest Phase 71B repository archive's checked-in `web/dist/masm32_sim_core.wasm` contains `phase-71b-source-run-output-contract-v1`. This corrects the stale artifact-token warning preserved in `docs/history/reports/Milestone 71B report.md`, which stated that the checked-in Wasm still contained the earlier Phase 71A output-contract token. The historical report should remain period evidence unless the project owner explicitly requests historical report correction, but future audits should treat the archive's artifact-content scan as the stronger evidence for the checked-in Wasm token.
+
+
+## Phase 87 - Irvine32 Crlf
+
+Phase 87 implements the focused virtual Irvine32 `Crlf` routine. With `INCLUDE Irvine32.inc`, `call Crlf` and zero-argument `INVOKE Crlf` append exactly one internal line-feed byte (`\n`) to Program Console. The routine preserves registers, modeled flags, flag-validity metadata, and memory, and it keeps Program Console output separate from Simulator Messages.
+
+`Crlf` uses the Phase 86 Program Console append path, so byte-limit and line-limit failures emit `console-output-limit-exceeded` through Simulator Messages and append no partial newline. Other Irvine32 output routines such as `WriteString` and `WriteChar`, Irvine32 input routines, macros, WinAPI behavior, PE loading, linking, host console I/O, and filesystem behavior remain future-owned or permanent non-goals according to the canonical specification and guide.
+
+Phase 87 also finalizes the Crlf diagnostic taxonomy. Because `Crlf` is implemented, invalid Crlf source forms are assembly errors rather than unsupported-feature diagnostics. `CALL Crlf` and `INVOKE Crlf` without `INCLUDE Irvine32.inc` report `missing-irvine32-include`. Argument-bearing `INVOKE Crlf` reports `invalid-irvine32-argument-count`. Bare `Crlf` reports `invalid-irvine32-call-form`. Still-deferred Irvine32 routines remain on the existing unsupported-feature paths, including `unsupported-irvine32-routine` for deferred direct calls and `unsupported-irvine-invoke` for deferred Irvine32 INVOKE dispatch.
+
+This milestone-history entry is implementation history. If a future assistant finds a conflict between this entry and the active canonical `FULL_IMPLEMENTATION_SPEC.md` or `INCREMENTAL_IMPLEMENTATION_GUIDE.md`, the active spec and guide control.
 
 ## Phase 86 - Program Console Output Limits and Serialization
 

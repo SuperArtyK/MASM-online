@@ -187,8 +187,8 @@ const char *masm32_sim_wasm_run_source_json_with_instruction_limit(
 
 /// Parses and executes source, then applies test-only synthetic Program Console output.
 ///
-/// This helper is restricted to native tests for Phase 86 Program Console
-/// output-limit serialization. It does not expose source-level printing syntax
+/// This helper is restricted to native tests for Program Console output-limit
+/// serialization. It does not expose additional source-level printing syntax
 /// and should not be used by browser UI code.
 ///
 /// @param source Null-terminated MASM-like source text to parse and execute.

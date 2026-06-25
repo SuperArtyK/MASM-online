@@ -12,8 +12,8 @@
  * width overrides, register-indirect memory operands, TYPE, LENGTHOF, SIZEOF,
  * packed character literals, implemented instruction groups, INCLUDELIB
  * diagnostics, Phase 82 zero-argument INVOKE lowering, Phase 83 helper-level
- * ADDR records, Phase 84 limited INVOKE DWORD argument lowering, targeted
- * INVOKE diagnostics for unsupported arguments and non-goal targets,
+ * ADDR records, Phase 84 limited INVOKE DWORD argument lowering, Phase 87
+ * virtual Irvine32 Crlf CALL/INVOKE lowering, targeted INVOKE diagnostics for unsupported arguments and non-goal targets,
  * high-level-flow diagnostics, explicit unsupported-feature diagnostics, safe
  * recovery for recognized MASM textbook constructs, specific surfaced lexer
  * diagnostics, virtual Irvine32 registry metadata, Phase 68 call-target
@@ -337,6 +337,12 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR_EXPRESSION,
     /// The caller-provided PROTO metadata table was full.
     VM_PARSER_DIAGNOSTIC_PROTO_CAPACITY_EXCEEDED,
+    /// An implemented Irvine32 routine was used before the required virtual Irvine32 include was active.
+    VM_PARSER_DIAGNOSTIC_MISSING_IRVINE32_INCLUDE,
+    /// An implemented Irvine32 routine was invoked with an invalid argument count.
+    VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_ARGUMENT_COUNT,
+    /// An implemented Irvine32 routine was written in an invalid source-level call form.
+    VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_CALL_FORM,
     /// Number of parser diagnostic codes.
     VM_PARSER_DIAGNOSTIC_CODE_COUNT
 } VmParserDiagnosticCode;
@@ -348,6 +354,8 @@ typedef enum VmIrvine32SymbolClass {
     VM_IRVINE32_SYMBOL_CLASS_UNKNOWN = 0,
     /// The name is registered as a virtual intrinsic symbol available to current metadata consumers.
     VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC,
+    /// The name is an implemented virtual Irvine32 routine with executable simulator behavior.
+    VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE,
     /// The name is recognized as a planned Irvine32 routine for a later milestone.
     VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE,
     /// The name is recognized but explicitly unsupported in the v1 simulator target.

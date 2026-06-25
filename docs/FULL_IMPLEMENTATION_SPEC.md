@@ -4038,9 +4038,25 @@ Output routines:
 
 ```text
 Crlf:
-  Appends CRLF or the simulator's documented newline sequence to Program Console.
-  Does not write Simulator Messages.
-  Register and flag effects must be documented before implementation.
+  Accepted source forms after INCLUDE Irvine32.inc:
+    call Crlf
+    INVOKE Crlf
+  Matching is case-insensitive for the Irvine32 routine name even when OPTION CASEMAP:NONE is active.
+  Appends exactly one internal Program Console line-feed byte: \n.
+  Does not append \r\n.
+  Does not read registers.
+  Does not modify registers.
+  Does not modify modeled flags or flag-validity metadata.
+  Does not read memory.
+  Does not write memory.
+  Does not write Simulator Messages on success.
+  Uses the Program Console append path and the current Program Console output-limit policy.
+  If appending the newline would exceed the configured Program Console byte limit or line limit, execution stops with [resource-limit-error] console-output-limit-exceeded and appends no partial newline.
+  CALL Crlf without INCLUDE Irvine32.inc is an assembly error, not an unsupported-feature diagnostic.
+  INVOKE Crlf without INCLUDE Irvine32.inc is an assembly error, not an unsupported-feature diagnostic.
+  Bare Crlf is an assembly error, not an unsupported-feature diagnostic.
+  INVOKE Crlf with one or more arguments is an assembly error, not an unsupported-feature diagnostic.
+  These Crlf diagnostics must not use unsupported-irvine32-routine or unsupported-irvine-invoke, because those codes imply deferred routine behavior rather than invalid use of an implemented routine.
 
 WriteString:
   Input: EDX = address of a null-terminated byte string.
@@ -6065,6 +6081,54 @@ Diagnostic categories include:
 - `simulator-warning`
 - `internal-simulator-error`
 
+Diagnostic category selection is part of the stable user-facing contract. A diagnostic must classify the user's actual problem. It must not merely expose the internal parser branch that detected the problem.
+
+Use `assembly-error` for source that is invalid for the currently implemented MASM32 Educational Mode language subset. This includes malformed syntax, invalid operands, invalid argument counts, invalid routine source forms, missing required virtual includes for an implemented virtual routine, and invalid arguments to a routine or construct that is otherwise implemented.
+
+Use `unsupported-feature` only when the source names a recognizable MASM, MASM32, Irvine32, WinAPI, CRT, linker, macro, directive, operand, instruction, routine, source form, or runtime behavior that the simulator deliberately does not implement in the current repository state or deliberately excludes as a product non-goal. Do not use `unsupported-feature` for a supported feature that the user invoked incorrectly.
+
+For implemented virtual Irvine32 routines, invalid use must be classified as an `assembly-error` unless the specific failing behavior is itself an unimplemented future feature and the implementation guide explicitly says to report it as unsupported. The diagnostic code must describe the invalid source condition. It must not reuse a generic deferred-routine code that implies the routine body is not implemented.
+
+The following Crlf diagnostics are the required Phase 87 taxonomy:
+
+| Source condition | Category | Code | Exact primary message text |
+|---|---|---|---|
+| `CALL Crlf` appears without prior `INCLUDE Irvine32.inc` | `assembly-error` | `missing-irvine32-include` | `CALL Crlf requires INCLUDE Irvine32.inc before Crlf can be used as a virtual Irvine32 routine.` |
+| `INVOKE Crlf` appears without prior `INCLUDE Irvine32.inc` | `assembly-error` | `missing-irvine32-include` | `INVOKE Crlf requires INCLUDE Irvine32.inc before Crlf can be used as a virtual Irvine32 routine.` |
+| `INVOKE Crlf` has one or more arguments after `INCLUDE Irvine32.inc` | `assembly-error` | `invalid-irvine32-argument-count` | `INVOKE Crlf takes no arguments. Remove the argument list or use CALL Crlf.` |
+| Bare `Crlf` appears as a statement after `INCLUDE Irvine32.inc` | `assembly-error` | `invalid-irvine32-call-form` | `Crlf is a virtual Irvine32 routine and must be called with CALL Crlf or zero-argument INVOKE Crlf.` |
+
+Diagnostic precedence for Crlf-specific invalid forms is required so future implementation work does not create inconsistent diagnostics:
+
+1. If a `CALL Crlf` or `INVOKE Crlf` source form appears before the virtual Irvine32 include is active, report `missing-irvine32-include` before validating Crlf-specific argument count or runtime eligibility.
+2. If `INVOKE Crlf` appears after the virtual Irvine32 include is active and has one or more arguments, report `invalid-irvine32-argument-count`.
+3. If bare `Crlf` appears as a statement after the virtual Irvine32 include is active, report `invalid-irvine32-call-form`.
+4. If a future test fixture intentionally covers bare `Crlf` without `INCLUDE Irvine32.inc`, the implementation guide for that phase must choose one precedence rule explicitly before changing behavior. Do not infer general Irvine32 routine execution from that case.
+
+The source span for these diagnostics must point at the source text that the user needs to fix:
+
+- for missing include on `CALL Crlf`, point at the `Crlf` target token;
+- for missing include on `INVOKE Crlf`, point at the `Crlf` target token;
+- for invalid `INVOKE Crlf` argument count, point at the first offending argument when one is available, otherwise point at the `Crlf` target token;
+- for bare `Crlf`, point at the bare `Crlf` token.
+
+The rendered Simulator Messages form must preserve the existing renderer format:
+
+```text
+[<category>] <code> line <line>, column <column>, byte offset <byte-offset>, span length <span-length>: <exact primary message text>
+```
+
+The following diagnostics remain `unsupported-feature` unless a later accepted phase implements the named routine or source form:
+
+| Source condition | Category | Code | Rationale |
+|---|---|---|---|
+| `CALL WriteString`, `CALL WriteChar`, or another recognized but not yet implemented Irvine32 routine call | `unsupported-feature` | `unsupported-irvine32-routine` | The routine body is recognized but intentionally not executable yet. |
+| `INVOKE WriteString`, `INVOKE WriteChar`, or another recognized but not yet implemented Irvine32 routine through INVOKE | `unsupported-feature` | `unsupported-irvine-invoke` | Irvine32 INVOKE dispatch for that routine remains future-owned. |
+| External/API, WinAPI, CRT, MASM32 runtime, include-library, object-linking, PE-loader, or host-filesystem behavior | `unsupported-feature` or a more specific unsupported/non-goal code | Existing or future unsupported/non-goal code | The behavior is outside the current simulator boundary or outside the v1 product boundary. |
+
+When a future phase implements one routine or one source form from a previously deferred family, only that implemented slice moves out of the generic unsupported path. Future-owned siblings must remain deferred. For example, implementing `Crlf` must not make `WriteString`, `WriteChar`, numeric output, input routines, macros, WinAPI behavior, linking, or general Irvine32 INVOKE dispatch executable.
+
+
 `source-load-error` is for browser/project source-loading failures only. It must not be used for PE loading, object linking, import-library loading, host-file loading, Windows loader behavior, or any other linker/loader behavior outside the simulator boundary.
 
 If older code, tests, or reports still mention `link-load-error`, treat that spelling as historical or transitional terminology. Do not introduce linker, loader, PE, object-file, import-library, WinAPI, or host-filesystem behavior to justify the old name.
@@ -6113,8 +6177,9 @@ Diagnostic wording is part of the user-facing product. Feature phases must not b
 Mandatory requirements:
 
 - Diagnostics must preserve line, column, byte offset, and span length whenever the error is tied to source text.
-- MASM-invalid code must receive an invalid-syntax or invalid-operands diagnostic, not `unsupported-feature`.
-- Planned-but-not-yet-implemented MASM features must receive `unsupported-feature` or a more specific planned-feature diagnostic.
+- MASM-invalid code and MASM32 Educational Mode invalid-source forms must receive `assembly-error` with a code that describes the invalid source condition. Do not report these as `unsupported-feature` merely because the parser recognized a related feature family.
+- Supported features used incorrectly must receive invalid-source diagnostics, not unsupported-feature diagnostics. For example, after virtual Irvine32 `Crlf` is implemented, missing `INCLUDE Irvine32.inc` for `CALL Crlf` or `INVOKE Crlf`, bare `Crlf`, and argument-bearing `INVOKE Crlf` are invalid Crlf source forms and must not be reported with `unsupported-irvine32-routine`, `unsupported-irvine-invoke`, or another code that implies `Crlf` itself is unimplemented.
+- Planned-but-not-yet-implemented MASM, MASM32, or Irvine32 features must receive `unsupported-feature` or a more specific planned-feature diagnostic.
 - Explicit non-goals must say they are outside the simulator, not imply future implementation.
 - Runtime memory diagnostics must classify invalid address, permission violation, `.CONST` read-only write, stack overflow/underflow, strict object-bounds failure, provenance failure, and uninitialized-origin read failure distinctly when those modes exist.
 - A failed access should emit one primary fatal diagnostic according to the memory diagnostic precedence ladder in the Memory Model.

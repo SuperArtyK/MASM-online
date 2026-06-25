@@ -11,13 +11,12 @@
  * Phase 70 helper plain near RET, Phase 71 root-code-stream RET termination, Phase 72A source-level PUSH/POP, Phase 73 LEAVE, Phase 74 RET imm16 cleanup,
  * Phase 71D configurable procedure-fallthrough diagnostics, Phase 71E
  * entry-procedure auto-stop compatibility, Phase 71C code-stream
- * end-falloff diagnostics, and Irvine32 exit
+ * end-falloff diagnostics, Irvine32 exit, and Phase 87 virtual Irvine32 Crlf
  * over the currently supported register and memory operand forms. It records
  * last-step deltas by snapshotting CPU state and copying memory-module byte
  * changes after each successful step. Phase 68A initializes ESP from the active
  * stack region at startup; source-level PUSH/POP, LEAVE, and RET imm16 cleanup are supported,
- * and Phase 77 saves and restores PROC USES registers on supported direct CALL/RET paths. Phase 79 creates automatic LOCAL frames for selected-entry and direct-CALL procedure paths, and Phase 80 resolves supported source-level LOCAL operands through active frame-relative storage. Phase 84 captures and commits accepted same-file user-procedure INVOKE DWORD arguments, including ADDR active-LOCAL arguments. ENTER, far returns, general source-level ADDR outside accepted INVOKE arguments, and non-exit
- * Irvine32 routines remain later milestones. Phase 69
+ * and Phase 77 saves and restores PROC USES registers on supported direct CALL/RET paths. Phase 79 creates automatic LOCAL frames for selected-entry and direct-CALL procedure paths, and Phase 80 resolves supported source-level LOCAL operands through active frame-relative storage. Phase 84 captures and commits accepted same-file user-procedure INVOKE DWORD arguments, including ADDR active-LOCAL arguments. Phase 87 appends virtual Irvine32 Crlf output through Program Console without changing registers, flags, or memory. ENTER, far returns, general source-level ADDR outside accepted INVOKE arguments, and Irvine32 routines beyond exit and Crlf remain later milestones. Phase 69
  * implements direct user-procedure CALL as a checked internal stack write,
  * Phase 70 implements helper RET as a checked internal stack read, and Phase 71
  * treats an eligible root-code-stream RET as successful termination. Phase 68B
@@ -4931,6 +4930,30 @@ static VmExecStatus vm_exec_execute_lea(Vm *vm, const VmIrInstruction *instructi
     return VM_EXEC_STATUS_OK;
 }
 
+
+/// Executes virtual Irvine32 Crlf.
+///
+/// Crlf appends exactly one internal line-feed byte to Program Console. It
+/// does not read operands, registers, flags, or memory, and it mutates no CPU
+/// state beyond ordinary instruction-position advancement performed by the
+/// stepping layer.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Crlf instruction descriptor used for limit diagnostics.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_irvine32_crlf(Vm *vm, const VmIrInstruction *instruction) {
+    static const char newline[] = "\n";
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (instruction->destination.kind != VM_IR_OPERAND_NONE || instruction->source.kind != VM_IR_OPERAND_NONE) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    return vm_append_program_console_output(vm, newline, 1U, instruction);
+}
+
 /// Executes one already-fetched instruction.
 ///
 /// @param vm VM instance to mutate.
@@ -5088,6 +5111,8 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             return vm_exec_execute_idiv(vm, instruction);
         case VM_IR_OPCODE_EXIT:
             return vm_exec_execute_exit(vm, instruction);
+        case VM_IR_OPCODE_IRVINE32_CRLF:
+            return vm_exec_execute_irvine32_crlf(vm, instruction);
         default:
             return VM_EXEC_STATUS_INVALID_INSTRUCTION;
     }

@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 80 LOCAL operand resolution and addressing coverage.
+ * @brief Unit tests for the VM executor through Phase 87 Irvine32 Crlf coverage.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
@@ -8,9 +8,7 @@
  * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end-mode compatibility, Phase 71F explicit-exit fallthrough regression coverage, Phase 72
  * call-depth resource-limit coverage, Phase 72A source-level PUSH/POP,
  * Phase 73 LEAVE frame teardown, Phase 74 RET imm16 cleanup, and
- * Phase 77 PROC USES runtime save/restore, Phase 79 automatic LOCAL stack allocation/lifetime, and Phase 80 LOCAL operand active-frame checks. They intentionally avoid parser, Irvine32
- * routine bodies, and browser UI behavior except for the Phase 42 virtual exit
- * terminator.
+ * Phase 77 PROC USES runtime save/restore, Phase 79 automatic LOCAL stack allocation/lifetime, Phase 80 LOCAL operand active-frame checks, and Phase 87 virtual Irvine32 Crlf output. They intentionally avoid parser and browser UI behavior except for the Phase 42 virtual exit terminator and Phase 87 Crlf routine contract.
  */
 
 #include <stdbool.h>
@@ -83,6 +81,21 @@ static int expect_size(size_t actual, size_t expected, const char *message) {
 static int expect_status(VmExecStatus actual, VmExecStatus expected, const char *message) {
     if (actual != expected) {
         fprintf(stderr, "FAIL: %s (actual=%s expected=%s)\n", message, vm_exec_status_name(actual), vm_exec_status_name(expected));
+        return 1;
+    }
+
+    return 0;
+}
+
+/// Verifies that two null-terminated strings are equal.
+///
+/// @param actual Actual string produced by the test.
+/// @param expected Expected string.
+/// @param message Failure message when values differ.
+/// @return Zero on success, otherwise one failure.
+static int expect_string(const char *actual, const char *expected, const char *message) {
+    if (actual == NULL || expected == NULL || strcmp(actual, expected) != 0) {
+        fprintf(stderr, "FAIL: %s (actual=%s expected=%s)\n", message, actual != NULL ? actual : "(null)", expected != NULL ? expected : "(null)");
         return 1;
     }
 
@@ -761,6 +774,104 @@ static int test_xchg_memory_and_nop_delta(void) {
     failures += expect_size(vm_last_delta(&vm)->flag_change_count, 0U, "nop should report no flag changes");
     failures += expect_size(vm_last_delta(&vm)->memory_change_count, 0U, "nop should report no memory changes");
     failures += expect_size(vm_last_delta(&vm)->memory_access_count, 0U, "nop should report no memory accesses");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+
+/// Verifies Phase 87 Crlf appends line feeds while preserving CPU and memory state.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase87_irvine32_crlf_appends_newlines_and_preserves_state(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t value = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_IRVINE32_CRLF, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "call Crlf", 0U},
+        {VM_IR_OPCODE_IRVINE32_CRLF, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "invoke Crlf", 1U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Crlf preservation test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "Crlf preservation program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x11111111U) ? 0 : record_failure("seed EAX should succeed before Crlf");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0x22222222U) ? 0 : record_failure("seed EBX should succeed before Crlf");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ECX, 0x33333333U) ? 0 : record_failure("seed ECX should succeed before Crlf");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0x44444444U) ? 0 : record_failure("seed EDX should succeed before Crlf");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_CF) ? 0 : record_failure("seed CF should succeed before Crlf");
+    failures += vm_cpu_clear_flag(&vm.cpu, VM_FLAG_ZF) ? 0 : record_failure("seed ZF should succeed before Crlf");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_SF) ? 0 : record_failure("seed SF should succeed before Crlf");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 9U, 1U, 90U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity before Crlf should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "first Crlf should execute successfully");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "\n", "first Crlf should append exactly one LF byte");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta->register_change_count, 0U, "Crlf should report no register changes");
+    failures += expect_size(delta->flag_change_count, 0U, "Crlf should report no flag changes");
+    failures += expect_size(delta->memory_change_count, 0U, "Crlf should report no memory changes");
+    failures += expect_size(delta->memory_access_count, 0U, "Crlf should report no memory accesses");
+    failures += expect_u32((uint32_t)vm.instruction_pointer, 1U, "Crlf should advance by ordinary fallthrough");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "second Crlf should execute successfully");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "\n\n", "consecutive Crlf instructions should append two LF bytes");
+    failures += expect_size(vm_console_byte_count(vm_program_console(&vm)), 2U, "two Crlf instructions should commit two bytes");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 2U, "two Crlf instructions should count two lines");
+
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &value) ? 0 : record_failure("EAX read after Crlf should succeed");
+    failures += expect_u32(value, 0x11111111U, "Crlf should preserve EAX");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &value) ? 0 : record_failure("EBX read after Crlf should succeed");
+    failures += expect_u32(value, 0x22222222U, "Crlf should preserve EBX");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ECX, &value) ? 0 : record_failure("ECX read after Crlf should succeed");
+    failures += expect_u32(value, 0x33333333U, "Crlf should preserve ECX");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &value) ? 0 : record_failure("EDX read after Crlf should succeed");
+    failures += expect_u32(value, 0x44444444U, "Crlf should preserve EDX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "Crlf should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, false, "Crlf should preserve ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "Crlf should preserve SF");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 9U, "Crlf should preserve OF validity metadata");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 87 Crlf output-limit failures append no partial newline.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase87_irvine32_crlf_limit_failure_is_atomic(void) {
+    int failures = 0;
+    Vm vm;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction byte_program[] = {
+        {VM_IR_OPCODE_IRVINE32_CRLF, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 10U, "call Crlf", 0U}
+    };
+    const VmIrInstruction line_program[] = {
+        {VM_IR_OPCODE_IRVINE32_CRLF, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 11U, "call Crlf", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Crlf limit test");
+    failures += expect_status(vm_load_program(&vm, byte_program, 1U), VM_EXEC_STATUS_OK, "byte-limit Crlf program should load");
+    failures += expect_status(vm_append_program_console_output(&vm, "x", 1U, NULL), VM_EXEC_STATUS_OK, "preexisting byte-limit output should commit");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 1U, 10U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "byte-limit fixture should configure at current byte count");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED, "Crlf beyond byte limit should fail");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "x", "byte-limit failure should not append a partial newline");
+    failures += expect_size(vm_console_byte_count(vm_program_console(&vm)), 1U, "byte-limit failure should preserve byte count");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 0U, "byte-limit failure should preserve line count");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED) {
+        failures += record_failure("Crlf byte-limit failure should record output-limit diagnostic status");
+    }
+
+    failures += expect_status(vm_load_program(&vm, line_program, 1U), VM_EXEC_STATUS_OK, "line-limit Crlf program should load and reset Program Console");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 64U, 1U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "line-limit fixture should configure before seeding output");
+    failures += expect_status(vm_append_program_console_output(&vm, "ok\n", 3U, NULL), VM_EXEC_STATUS_OK, "preexisting line-limit output should commit");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED, "Crlf beyond line limit should fail");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "ok\n", "line-limit failure should not append a partial newline");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 1U, "line-limit failure should preserve committed line count");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED) {
+        failures += record_failure("Crlf line-limit failure should record output-limit diagnostic status");
+    }
 
     vm_deinit(&vm);
     return failures;
@@ -6543,6 +6654,8 @@ int main(void) {
     failures += test_xchg_registers_preserves_flags();
     failures += test_xchg_memory_and_nop_delta();
     failures += test_phase57n_nop_preserves_state_and_counts();
+    failures += test_phase87_irvine32_crlf_appends_newlines_and_preserves_state();
+    failures += test_phase87_irvine32_crlf_limit_failure_is_atomic();
     failures += test_neg_register_memory_and_flags();
     failures += test_phase20_error_paths();
     failures += test_adc_register_carry_propagation();
@@ -6652,6 +6765,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 80 LOCAL operand resolution and addressing coverage passed.");
+    puts("Executor tests through Phase 87 Irvine32 Crlf coverage passed.");
     return 0;
 }

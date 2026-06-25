@@ -25469,19 +25469,142 @@ and Program Console contains only the fully committed output before the failing 
 
 Implement the virtual Irvine32 `Crlf` routine as a focused Program Console output milestone.
 
+This phase implements only `Crlf`. It must not implement `WriteChar`, `WriteString`, numeric output routines, input routines, Irvine32 macros, console-control routines, file routines, random routines, debug routines, WinAPI behavior, PE loading, linking, host include loading, host console I/O, or general Irvine32 dispatch.
+
+### Dependencies
+
+- Phase 41 virtual Irvine32 symbol registry and `INCLUDE Irvine32.inc` metadata.
+- Phase 42 virtual Irvine32 `exit` terminator behavior.
+- Phase 82 zero-argument `INVOKE` infrastructure.
+- Phase 86 Program Console append, byte limit, line limit, no-partial-output, and serialization infrastructure.
+
+### Accepted source forms
+
+After `INCLUDE Irvine32.inc`, the following source forms are accepted and executable:
+
+```asm
+call Crlf
+CALL CRLF
+invoke Crlf
+INVOKE CRLF
+```
+
+The Irvine32 routine name `Crlf` is matched case-insensitively even when `OPTION CASEMAP:NONE` is active. This case-insensitive matching applies only to the simulator-owned virtual Irvine32 routine name. It must not change user-symbol lookup rules for user procedures, labels, variables, locals, equates, or macro names.
+
+The equivalent supported virtual-call form for this phase is zero-argument `INVOKE Crlf`. This is a Crlf-specific virtual routine form. It must not enable general Irvine32 `INVOKE` dispatch for `WriteString`, `WriteChar`, numeric output, input routines, or any other Irvine32 routine.
+
+`Crlf` must require `INCLUDE Irvine32.inc` for executable `CALL Crlf` and zero-argument `INVOKE Crlf`. Do not make `CALL Crlf`, `INVOKE Crlf`, or bare `Crlf` act as ordinary user-procedure references when the virtual include is absent. Do not let a user declaration such as `Crlf PROC` or `crlf PROC` shadow the virtual Irvine32 routine name when the registry reserves it.
+
 ### Runtime contract
 
-- Accepted call shape: `call Crlf` and equivalent supported virtual-call form.
-- Append exactly one internal Program Console newline sequence `\n`.
-- Do not read or modify registers or flags.
-- Respect Program Console output limits with no partial output.
+`Crlf` must:
+
+- append exactly one internal Program Console byte: `\n`;
+- not append `\r\n`;
+- not write to Simulator Messages on success;
+- keep Program Console output separate from Simulator Messages;
+- not read registers;
+- not modify registers;
+- not modify modeled flags;
+- not modify flag-validity metadata;
+- not read memory;
+- not write memory;
+- preserve public memory-change output;
+- respect the Phase 86 Program Console byte and line limits;
+- stop with `resource-limit-error` / `console-output-limit-exceeded` when the newline would exceed either configured Program Console limit;
+- append no partial newline on output-limit failure.
+
+### Crlf diagnostic taxonomy
+
+`Crlf` is an implemented virtual Irvine32 routine in this phase. Therefore, invalid Crlf source forms must be `assembly-error` diagnostics, not `unsupported-feature` diagnostics. Do not use `unsupported-irvine32-routine` or `unsupported-irvine-invoke` for Crlf misuse, because those codes imply the routine body or source form itself is still deferred.
+
+Required Crlf diagnostics:
+
+| Source condition | Category | Code | Exact primary message text |
+|---|---|---|---|
+| `CALL Crlf` appears without prior `INCLUDE Irvine32.inc` | `assembly-error` | `missing-irvine32-include` | `CALL Crlf requires INCLUDE Irvine32.inc before Crlf can be used as a virtual Irvine32 routine.` |
+| `INVOKE Crlf` appears without prior `INCLUDE Irvine32.inc` | `assembly-error` | `missing-irvine32-include` | `INVOKE Crlf requires INCLUDE Irvine32.inc before Crlf can be used as a virtual Irvine32 routine.` |
+| `INVOKE Crlf` has one or more arguments after `INCLUDE Irvine32.inc` | `assembly-error` | `invalid-irvine32-argument-count` | `INVOKE Crlf takes no arguments. Remove the argument list or use CALL Crlf.` |
+| Bare `Crlf` appears as a statement after `INCLUDE Irvine32.inc` | `assembly-error` | `invalid-irvine32-call-form` | `Crlf is a virtual Irvine32 routine and must be called with CALL Crlf or zero-argument INVOKE Crlf.` |
+
+Diagnostic precedence:
+
+1. `CALL Crlf` or `INVOKE Crlf` without prior `INCLUDE Irvine32.inc` reports `missing-irvine32-include` before any Crlf runtime or argument validation.
+2. `INVOKE Crlf` after `INCLUDE Irvine32.inc` with one or more arguments reports `invalid-irvine32-argument-count`.
+3. Bare `Crlf` after `INCLUDE Irvine32.inc` reports `invalid-irvine32-call-form`.
+4. Do not use this phase to define behavior for every possible bare Irvine32 routine spelling. This phase owns only the Crlf cases listed here.
+
+Span requirements:
+
+- Missing-include diagnostics for `CALL Crlf` and `INVOKE Crlf` must point at the `Crlf` target token.
+- Argument-count diagnostics must point at the first offending argument token when present. If no argument token can be isolated, point at the `Crlf` target token.
+- Bare-form diagnostics must point at the bare `Crlf` token.
+- Every source-tied Crlf diagnostic must preserve line, column, byte offset, and span length in structured output and rendered Simulator Messages tests.
+
+Rendered Simulator Messages format:
+
+```text
+[<category>] <code> line <line>, column <column>, byte offset <byte-offset>, span length <span-length>: <exact primary message text>
+```
+
+Still-deferred Irvine32 diagnostics:
+
+- `CALL WriteString`, `CALL WriteChar`, and other recognized but not yet implemented Irvine32 routine calls must remain `unsupported-feature` / `unsupported-irvine32-routine` unless their owning future phase explicitly implements them.
+- `INVOKE WriteString`, `INVOKE WriteChar`, and other recognized but not yet implemented Irvine32 routine `INVOKE` forms must remain `unsupported-feature` / `unsupported-irvine-invoke` unless their owning future phase explicitly implements them.
+- This phase must not change external/API, WinAPI, CRT, MASM32 runtime, include-library, object-linking, PE-loader, host-filesystem, macro, or general calling-convention diagnostics.
 
 ### Required tests
 
+Native/parser tests:
+
+- `INCLUDE Irvine32.inc` plus `call Crlf` is accepted.
+- `INCLUDE Irvine32.inc` plus mixed-case `CALL cRlF` is accepted.
+- `INCLUDE Irvine32.inc` plus zero-argument `INVOKE Crlf` is accepted.
+- `INCLUDE Irvine32.inc` plus mixed-case `INVOKE CRLF` is accepted.
+- `OPTION CASEMAP:NONE` does not make the virtual Irvine32 routine name `Crlf` case-sensitive.
+- `CALL Crlf` without `INCLUDE Irvine32.inc` emits `assembly-error` / `missing-irvine32-include` and points at the `Crlf` token.
+- `INVOKE Crlf` without `INCLUDE Irvine32.inc` emits `assembly-error` / `missing-irvine32-include` and points at the `Crlf` token.
+- `INVOKE Crlf, eax` emits `assembly-error` / `invalid-irvine32-argument-count` and points at `eax`.
+- Bare `Crlf` emits `assembly-error` / `invalid-irvine32-call-form` and points at the bare `Crlf` token.
+- User declarations such as `Crlf PROC` and `crlf PROC` remain rejected through the reserved virtual-routine name policy.
+- `CALL WriteString`, `CALL WriteChar`, and `INVOKE WriteString` remain deferred/rejected with the existing future-owned Irvine32 diagnostics.
+
+Executor/source-run tests:
+
 - `Crlf` appends exactly `\n`.
-- Consecutive `Crlf` calls append two newlines in order.
-- Output-limit failure appends no partial newline.
-- Program Console and Simulator Messages remain separate.
+- Consecutive `Crlf` calls append `\n\n` in order.
+- `CALL Crlf` and zero-argument `INVOKE Crlf` produce equivalent Program Console newline behavior.
+- `Crlf` preserves every modeled register.
+- `Crlf` preserves modeled flags and flag-validity metadata.
+- `Crlf` reads no memory and writes no memory.
+- `Crlf` produces no memory-change row.
+- Output-limit failure through `Crlf` appends no partial newline.
+- Output-limit failure through `Crlf` emits `resource-limit-error` / `console-output-limit-exceeded` in Simulator Messages.
+- Program Console output and Simulator Messages remain separate.
+
+Rendered Simulator Messages tests:
+
+- Exact rendered message for `missing-irvine32-include` on `CALL Crlf` without include.
+- Exact rendered message for `missing-irvine32-include` on `INVOKE Crlf` without include.
+- Exact rendered message for `invalid-irvine32-argument-count` on `INVOKE Crlf, eax`.
+- Exact rendered message for `invalid-irvine32-call-form` on bare `Crlf`.
+- Exact rendered message for continued `unsupported-irvine32-routine` on a still-deferred routine such as `CALL WriteString`.
+- Exact rendered message for continued `unsupported-irvine-invoke` on a still-deferred routine such as `INVOKE WriteString`.
+
+Web/protocol/static tests:
+
+- The default editor program uses implemented Phase 87 `Crlf` behavior and runs successfully after a fresh Wasm rebuild.
+- `web/index.html`, displayed milestone text, default source, output-contract metadata, and protocol constants identify Phase 87.
+- Source-run output contract identifies the Phase 87 Crlf behavior.
+- Static checks reject stale active documentation that says all Irvine32 routine dispatch remains future-owned.
+
+### Acceptance criteria
+
+A source-run program containing `INCLUDE Irvine32.inc`, `call Crlf`, zero-argument `INVOKE Crlf`, and `exit` completes successfully, emits Program Console text exactly equal to `\n\n`, emits no Program Console diagnostics, and preserves Simulator Messages as the separate diagnostic/status stream.
+
+Invalid Crlf source forms use the Phase 87 Crlf diagnostic taxonomy above. The milestone is not complete if implemented Crlf misuse is reported as `unsupported-feature` / `unsupported-irvine32-routine` / `unsupported-irvine-invoke`.
+
+Still-deferred Irvine32 routines remain deferred. The milestone is not complete if `WriteString`, `WriteChar`, numeric output, input routines, macros, or general Irvine32 `INVOKE` dispatch become executable.
 
 ## 92. Phase 88 - Irvine32 WriteChar
 
