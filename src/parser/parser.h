@@ -13,7 +13,8 @@
  * packed character literals, implemented instruction groups, INCLUDELIB
  * diagnostics, Phase 82 zero-argument INVOKE lowering, Phase 83 helper-level
  * ADDR records, Phase 84 limited INVOKE DWORD argument lowering, Phase 87
- * virtual Irvine32 Crlf CALL/INVOKE lowering, targeted INVOKE diagnostics for unsupported arguments and non-goal targets,
+ * virtual Irvine32 Crlf CALL/INVOKE lowering, Phase 88 direct
+ * WriteChar lowering, targeted INVOKE diagnostics for unsupported arguments and non-goal targets,
  * high-level-flow diagnostics, explicit unsupported-feature diagnostics, safe
  * recovery for recognized MASM textbook constructs, specific surfaced lexer
  * diagnostics, virtual Irvine32 registry metadata, Phase 68 call-target

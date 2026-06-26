@@ -152,6 +152,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_EXIT,
     /// Append one Program Console line-feed byte for virtual Irvine32 `Crlf`.
     VM_IR_OPCODE_IRVINE32_CRLF,
+    /// Append the low byte of AL to Program Console for virtual Irvine32 `WriteChar`.
+    VM_IR_OPCODE_IRVINE32_WRITECHAR,
     /// Number of currently supported operation codes.
     VM_IR_OPCODE_COUNT
 } VmIrOpcode;

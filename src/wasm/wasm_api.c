@@ -28,7 +28,7 @@
  * Phase 82 zero-argument user-procedure INVOKE lowering and diagnostics,
  * Phase 83 ADDR helper preparation, Phase 84 limited INVOKE DWORD argument
  * lowering and cleanup validation, Phase 86 Program Console output-limit
- * serialization, and Phase 87 Irvine32 Crlf, and recovered unsupported-feature
+ * serialization, Phase 87 Irvine32 Crlf, and Phase 88 Irvine32 WriteChar, and recovered unsupported-feature
  * diagnostics, then reports a compact JSON result for the UI.
  */
 
@@ -94,16 +94,16 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase reported to JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 87U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 88U
 
-/// Suffix for the current Phase 87 runtime/source-run behavior phase.
+/// Suffix for the current Phase 88 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 87 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 87 - Irvine32 Crlf"
+/// Full name of the current Phase 88 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 88 - Irvine32 WriteChar"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 87 Irvine32 Crlf Program Console output.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-87-irvine32-crlf-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 88 Irvine32 WriteChar Program Console output.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-88-irvine32-writechar-contract-v1"
 
 /// Canonical empty Program Console JSON object for source-run fallback responses.
 #define MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON "\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0,\"maxBytes\":1048576,\"maxLines\":10000,\"limitExceeded\":false,\"limitKind\":null}"

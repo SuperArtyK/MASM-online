@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 87 Irvine32 Crlf coverage.
+ * @brief Unit tests for the VM executor through Phase 88 Irvine32 WriteChar coverage.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
@@ -8,7 +8,7 @@
  * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end-mode compatibility, Phase 71F explicit-exit fallthrough regression coverage, Phase 72
  * call-depth resource-limit coverage, Phase 72A source-level PUSH/POP,
  * Phase 73 LEAVE frame teardown, Phase 74 RET imm16 cleanup, and
- * Phase 77 PROC USES runtime save/restore, Phase 79 automatic LOCAL stack allocation/lifetime, Phase 80 LOCAL operand active-frame checks, and Phase 87 virtual Irvine32 Crlf output. They intentionally avoid parser and browser UI behavior except for the Phase 42 virtual exit terminator and Phase 87 Crlf routine contract.
+ * Phase 77 PROC USES runtime save/restore, Phase 79 automatic LOCAL stack allocation/lifetime, Phase 80 LOCAL operand active-frame checks, Phase 87 virtual Irvine32 Crlf output, and Phase 88 virtual Irvine32 WriteChar output. They intentionally avoid parser and browser UI behavior except for the Phase 42 virtual exit terminator and focused Irvine32 routine contracts.
  */
 
 #include <stdbool.h>
@@ -871,6 +871,104 @@ static int test_phase87_irvine32_crlf_limit_failure_is_atomic(void) {
     diagnostic = vm_last_diagnostic(&vm);
     if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED) {
         failures += record_failure("Crlf line-limit failure should record output-limit diagnostic status");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 88 WriteChar emits AL only and preserves CPU state.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase88_irvine32_writechar_appends_al_and_preserves_state(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t value = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_IRVINE32_WRITECHAR, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "call WriteChar", 0U},
+        {VM_IR_OPCODE_IRVINE32_WRITECHAR, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "call WriteChar", 1U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteChar preservation test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "WriteChar preservation program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x12345641U) ? 0 : record_failure("seed EAX should succeed before WriteChar");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0x22222222U) ? 0 : record_failure("seed EBX should succeed before WriteChar");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ECX, 0x33333333U) ? 0 : record_failure("seed ECX should succeed before WriteChar");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0x44444444U) ? 0 : record_failure("seed EDX should succeed before WriteChar");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_CF) ? 0 : record_failure("seed CF should succeed before WriteChar");
+    failures += vm_cpu_clear_flag(&vm.cpu, VM_FLAG_ZF) ? 0 : record_failure("seed ZF should succeed before WriteChar");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_SF) ? 0 : record_failure("seed SF should succeed before WriteChar");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 9U, 1U, 90U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity before WriteChar should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "first WriteChar should execute successfully");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "A", "WriteChar should append the low AL byte only");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta->register_change_count, 0U, "WriteChar should report no register changes");
+    failures += expect_size(delta->flag_change_count, 0U, "WriteChar should report no flag changes");
+    failures += expect_size(delta->memory_change_count, 0U, "WriteChar should report no memory changes");
+    failures += expect_size(delta->memory_access_count, 0U, "WriteChar should report no memory accesses");
+
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0xFFFFFF42U) ? 0 : record_failure("seed second EAX should succeed before WriteChar");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "second WriteChar should execute successfully");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "AB", "WriteChar should ignore high EAX bytes for consecutive output");
+    failures += expect_size(vm_console_byte_count(vm_program_console(&vm)), 2U, "two WriteChar calls should commit two bytes");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 0U, "alphabetic WriteChar calls should not count lines");
+
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &value) ? 0 : record_failure("EAX read after WriteChar should succeed");
+    failures += expect_u32(value, 0xFFFFFF42U, "WriteChar should preserve EAX");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &value) ? 0 : record_failure("EBX read after WriteChar should succeed");
+    failures += expect_u32(value, 0x22222222U, "WriteChar should preserve EBX");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ECX, &value) ? 0 : record_failure("ECX read after WriteChar should succeed");
+    failures += expect_u32(value, 0x33333333U, "WriteChar should preserve ECX");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &value) ? 0 : record_failure("EDX read after WriteChar should succeed");
+    failures += expect_u32(value, 0x44444444U, "WriteChar should preserve EDX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "WriteChar should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, false, "WriteChar should preserve ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "WriteChar should preserve SF");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 9U, "WriteChar should preserve OF validity metadata");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 88 WriteChar output-limit failures append no partial byte.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase88_irvine32_writechar_limit_failure_is_atomic(void) {
+    int failures = 0;
+    Vm vm;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction byte_program[] = {
+        {VM_IR_OPCODE_IRVINE32_WRITECHAR, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 10U, "call WriteChar", 0U}
+    };
+    const VmIrInstruction line_program[] = {
+        {VM_IR_OPCODE_IRVINE32_WRITECHAR, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 11U, "call WriteChar", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteChar limit test");
+    failures += expect_status(vm_load_program(&vm, byte_program, 1U), VM_EXEC_STATUS_OK, "byte-limit WriteChar program should load");
+    failures += expect_status(vm_append_program_console_output(&vm, "x", 1U, NULL), VM_EXEC_STATUS_OK, "preexisting byte-limit output should commit");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x00000041U) ? 0 : record_failure("seed AL should succeed before byte-limit WriteChar");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 1U, 10U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "byte-limit fixture should configure at current byte count");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED, "WriteChar beyond byte limit should fail");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "x", "byte-limit failure should not append a partial character");
+    failures += expect_size(vm_console_byte_count(vm_program_console(&vm)), 1U, "byte-limit failure should preserve byte count");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED) {
+        failures += record_failure("WriteChar byte-limit failure should record output-limit diagnostic status");
+    }
+
+    failures += expect_status(vm_load_program(&vm, line_program, 1U), VM_EXEC_STATUS_OK, "line-limit WriteChar program should load and reset Program Console");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 64U, 1U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "line-limit fixture should configure before seeding output");
+    failures += expect_status(vm_append_program_console_output(&vm, "ok\n", 3U, NULL), VM_EXEC_STATUS_OK, "preexisting line-limit output should commit");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x0000000AU) ? 0 : record_failure("seed LF AL should succeed before line-limit WriteChar");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED, "WriteChar LF beyond line limit should fail");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "ok\n", "line-limit failure should not append a partial LF byte");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 1U, "line-limit failure should preserve committed line count");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED) {
+        failures += record_failure("WriteChar line-limit failure should record output-limit diagnostic status");
     }
 
     vm_deinit(&vm);
@@ -6604,6 +6702,9 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_LEAVE), "leave") != 0) {
         failures += record_failure("LEAVE opcode name should be leave");
     }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_IRVINE32_WRITECHAR), "writechar") != 0) {
+        failures += record_failure("WriteChar opcode name should be writechar");
+    }
     if (vm_ir_opcode_name((VmIrOpcode)99) != NULL) {
         failures += record_failure("invalid opcode name should be NULL");
     }
@@ -6656,6 +6757,8 @@ int main(void) {
     failures += test_phase57n_nop_preserves_state_and_counts();
     failures += test_phase87_irvine32_crlf_appends_newlines_and_preserves_state();
     failures += test_phase87_irvine32_crlf_limit_failure_is_atomic();
+    failures += test_phase88_irvine32_writechar_appends_al_and_preserves_state();
+    failures += test_phase88_irvine32_writechar_limit_failure_is_atomic();
     failures += test_neg_register_memory_and_flags();
     failures += test_phase20_error_paths();
     failures += test_adc_register_carry_propagation();
@@ -6765,6 +6868,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 87 Irvine32 Crlf coverage passed.");
+    puts("Executor tests through Phase 88 Irvine32 WriteChar coverage passed.");
     return 0;
 }

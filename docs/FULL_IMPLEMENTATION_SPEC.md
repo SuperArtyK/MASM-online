@@ -4065,8 +4065,22 @@ WriteString:
   Decodes bytes using the simulator's documented console byte policy, initially ASCII-compatible byte-to-character mapping.
 
 WriteChar:
+  Accepted source forms after INCLUDE Irvine32.inc:
+    call WriteChar
+  Matching is case-insensitive for the Irvine32 routine name even when OPTION CASEMAP:NONE is active.
   Input: AL is the character byte. If EAX is referenced in UI text, only AL is consumed.
+  High bytes of EAX are ignored for output selection.
   Appends exactly one character/control byte according to the console byte policy.
+  Does not modify registers.
+  Does not modify modeled flags or flag-validity metadata.
+  Does not read memory.
+  Does not write memory.
+  Does not write Simulator Messages on success.
+  Uses the Program Console append path and the current Program Console output-limit policy.
+  If appending the byte would exceed the configured Program Console byte limit or line limit, execution stops with [resource-limit-error] console-output-limit-exceeded and appends no partial byte.
+  CALL WriteChar without INCLUDE Irvine32.inc is an assembly error, not an unsupported-feature diagnostic.
+  Bare WriteChar is an assembly error, not an unsupported-feature diagnostic.
+  INVOKE WriteChar remains future-owned until a later accepted phase implements that source form.
 
 WriteInt:
   Input: EAX interpreted as signed 32-bit integer.
@@ -6118,15 +6132,15 @@ The rendered Simulator Messages form must preserve the existing renderer format:
 [<category>] <code> line <line>, column <column>, byte offset <byte-offset>, span length <span-length>: <exact primary message text>
 ```
 
-The following diagnostics remain `unsupported-feature` unless a later accepted phase implements the named routine or source form:
+The following diagnostics remain `unsupported-feature` unless a later accepted phase implements the named routine or source form. Direct `CALL WriteChar` after `INCLUDE Irvine32.inc` is implemented and is not part of this deferred table:
 
 | Source condition | Category | Code | Rationale |
 |---|---|---|---|
-| `CALL WriteString`, `CALL WriteChar`, or another recognized but not yet implemented Irvine32 routine call | `unsupported-feature` | `unsupported-irvine32-routine` | The routine body is recognized but intentionally not executable yet. |
+| `CALL WriteString` or another recognized but not yet implemented Irvine32 routine call other than implemented `Crlf` and `WriteChar` forms | `unsupported-feature` | `unsupported-irvine32-routine` | The routine body is recognized but intentionally not executable yet. |
 | `INVOKE WriteString`, `INVOKE WriteChar`, or another recognized but not yet implemented Irvine32 routine through INVOKE | `unsupported-feature` | `unsupported-irvine-invoke` | Irvine32 INVOKE dispatch for that routine remains future-owned. |
 | External/API, WinAPI, CRT, MASM32 runtime, include-library, object-linking, PE-loader, or host-filesystem behavior | `unsupported-feature` or a more specific unsupported/non-goal code | Existing or future unsupported/non-goal code | The behavior is outside the current simulator boundary or outside the v1 product boundary. |
 
-When a future phase implements one routine or one source form from a previously deferred family, only that implemented slice moves out of the generic unsupported path. Future-owned siblings must remain deferred. For example, implementing `Crlf` must not make `WriteString`, `WriteChar`, numeric output, input routines, macros, WinAPI behavior, linking, or general Irvine32 INVOKE dispatch executable.
+When a future phase implements one routine or one source form from a previously deferred family, only that implemented slice moves out of the generic unsupported path. Future-owned siblings must remain deferred. For example, implementing `Crlf` and direct `CALL WriteChar` must not make `WriteString`, numeric output, input routines, macros, WinAPI behavior, linking, `INVOKE WriteChar`, or general Irvine32 INVOKE dispatch executable.
 
 
 `source-load-error` is for browser/project source-loading failures only. It must not be used for PE loading, object linking, import-library loading, host-file loading, Windows loader behavior, or any other linker/loader behavior outside the simulator boundary.

@@ -252,6 +252,8 @@ const char *vm_ir_opcode_name(VmIrOpcode opcode) {
             return "exit";
         case VM_IR_OPCODE_IRVINE32_CRLF:
             return "crlf";
+        case VM_IR_OPCODE_IRVINE32_WRITECHAR:
+            return "writechar";
         default:
             return NULL;
     }
