@@ -28,7 +28,7 @@
  * Phase 82 zero-argument user-procedure INVOKE lowering and diagnostics,
  * Phase 83 ADDR helper preparation, Phase 84 limited INVOKE DWORD argument
  * lowering and cleanup validation, Phase 86 Program Console output-limit
- * serialization, Phase 87 Irvine32 Crlf, and Phase 88 Irvine32 WriteChar, and recovered unsupported-feature
+ * serialization, Phase 87 Irvine32 Crlf, Phase 88 Irvine32 WriteChar, and Phase 89 Irvine32 WriteString, and recovered unsupported-feature
  * diagnostics, then reports a compact JSON result for the UI.
  */
 
@@ -49,6 +49,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #if defined(__EMSCRIPTEN__)
@@ -94,16 +95,16 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase reported to JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 88U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 89U
 
-/// Suffix for the current Phase 88 runtime/source-run behavior phase.
+/// Suffix for the current Phase 89 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 88 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 88 - Irvine32 WriteChar"
+/// Full name of the current Phase 89 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 89 - Irvine32 WriteString"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 88 Irvine32 WriteChar Program Console output.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-88-irvine32-writechar-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 89 Irvine32 WriteString Program Console output.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-89-irvine32-writestring-contract-v1"
 
 /// Canonical empty Program Console JSON object for source-run fallback responses.
 #define MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON "\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0,\"maxBytes\":1048576,\"maxLines\":10000,\"limitExceeded\":false,\"limitKind\":null}"
@@ -649,6 +650,9 @@ static Masm32SimWasmRunStorage g_masm32_sim_wasm_run_storage;
 
 /// Optional test-facing synthetic Program Console output fixture for the next source run.
 static const Masm32SimWasmSyntheticConsoleOutput *g_masm32_sim_wasm_synthetic_console_output = NULL;
+
+/// Optional test-facing WriteString scan limit override for the next source run.
+static uint32_t g_masm32_sim_wasm_writestring_scan_limit_override = 0U;
 
 /// Returns whether a Phase 57F startup register/flag mode enum value is accepted.
 ///
@@ -3605,7 +3609,7 @@ static size_t masm32_sim_wasm_collect_planned_reads(
             break;
         }
         default:
-            /* TODO(Phase-owned future instruction milestones): add each future memory-reading opcode here when that opcode is implemented. */
+            /* TODO(Phase-owned future fixed-width instruction milestones): add each future fixed-width memory-reading opcode here when that opcode is implemented. Variable-length routine readers such as WriteString use dedicated preflight paths. */
             break;
     }
 
@@ -5163,6 +5167,197 @@ static bool masm32_sim_wasm_validate_uninitialized_read(
     return true;
 }
 
+
+/// Returns whether a byte span would exceed the current Program Console limits.
+///
+/// @param console Console object whose limits should be checked.
+/// @param text Candidate bytes to append.
+/// @param byte_count Candidate byte count.
+/// @return true when the append would exceed byte or line limits.
+static bool masm32_sim_wasm_console_append_would_exceed_limit(const VmConsole *console, const char *text, size_t byte_count) {
+    size_t index = 0U;
+    size_t line_count = 0U;
+
+    if (console == NULL || (text == NULL && byte_count > 0U)) {
+        return true;
+    }
+    for (index = 0U; index < byte_count; index += 1U) {
+        if (text[index] == '\n') {
+            line_count += 1U;
+        }
+    }
+    if (byte_count > vm_console_max_bytes(console) || vm_console_byte_count(console) > vm_console_max_bytes(console) - byte_count) {
+        return true;
+    }
+    if (line_count > vm_console_max_lines(console) || vm_console_line_count(console) > vm_console_max_lines(console) - line_count) {
+        return true;
+    }
+    return false;
+}
+
+/// Validates WriteString uninitialized-origin diagnostics without committing warnings from fatal calls.
+///
+/// The executor owns mandatory memory, scan-limit, and output-limit failures.
+/// This source-run preflight mirrors enough of the scan to collect
+/// uninitialized-read warnings only when the same WriteString call is expected
+/// to complete successfully. Strict uninitialized-read mode still stops before
+/// stepping, preserving the existing source-run policy contract.
+///
+/// @param storage Source-run storage to mutate.
+/// @param vm VM positioned at the next instruction.
+/// @param instruction WriteString instruction to preflight.
+/// @param validation_mode Uninitialized-read policy.
+/// @param layout_policy Selected layout policy, or NULL for fixed layout.
+/// @return OK to continue, or MEMORY_ERROR for strict uninitialized reads.
+static VmExecStatus masm32_sim_wasm_validate_writestring_uninitialized_before_step(
+    Masm32SimWasmRunStorage *storage,
+    const Vm *vm,
+    const VmIrInstruction *instruction,
+    Masm32SimWasmMemoryValidationMode validation_mode,
+    const VmLayoutPolicy *layout_policy
+) {
+    uint32_t edx = 0U;
+    uint32_t limit = 0U;
+    uint32_t index = 0U;
+    uint32_t read_size = 0U;
+    uint32_t uninitialized_count = 0U;
+    char candidate[VM_IRVINE32_WRITESTRING_SCAN_LIMIT_BYTES > 4096U ? 4096U : VM_IRVINE32_WRITESTRING_SCAN_LIMIT_BYTES];
+    char *candidate_heap = NULL;
+    char *candidate_text = candidate;
+    size_t candidate_capacity = sizeof(candidate);
+    size_t candidate_count = 0U;
+
+    if (storage == NULL || vm == NULL || instruction == NULL ||
+        instruction->opcode != VM_IR_OPCODE_IRVINE32_WRITESTRING ||
+        !masm32_sim_wasm_validation_checks_uninitialized_reads(validation_mode)) {
+        return VM_EXEC_STATUS_OK;
+    }
+    if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_EDX, &edx)) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    limit = vm_irvine32_writestring_scan_limit(vm);
+    for (index = 0U; index < limit; index += 1U) {
+        uint32_t address = 0U;
+        uint8_t byte_value = 0U;
+        VmMemoryStatus memory_status = VM_MEMORY_STATUS_OK;
+
+        if (index > UINT32_MAX - edx) {
+            free(candidate_heap);
+            return VM_EXEC_STATUS_OK;
+        }
+        address = edx + index;
+        memory_status = vm_memory_read_u8(&vm->memory, address, &byte_value, NULL);
+        if (!vm_memory_status_succeeded(memory_status)) {
+            free(candidate_heap);
+            return VM_EXEC_STATUS_OK;
+        }
+        read_size = index + 1U;
+        if (masm32_sim_wasm_validation_strict_uninitialized_reads(validation_mode)) {
+            uint32_t strict_uninitialized_count = masm32_sim_wasm_count_uninitialized_read_bytes(storage, address, 1U, layout_policy);
+            if (strict_uninitialized_count != 0U) {
+                masm32_sim_wasm_fill_uninitialized_read_diagnostic(
+                    &storage->uninitialized_read_violation,
+                    storage,
+                    instruction,
+                    address,
+                    1U,
+                    strict_uninitialized_count
+                );
+                if (!storage->uninitialized_read_violation.has_source_span) {
+                    masm32_sim_wasm_copy_instruction_source_span(
+                        instruction,
+                        storage->source_text,
+                        &storage->uninitialized_read_violation.source_column,
+                        &storage->uninitialized_read_violation.source_byte_offset,
+                        &storage->uninitialized_read_violation.source_span_length,
+                        &storage->uninitialized_read_violation.has_source_span
+                    );
+                }
+                storage->has_uninitialized_read_violation = true;
+                free(candidate_heap);
+                return VM_EXEC_STATUS_MEMORY_ERROR;
+            }
+        }
+        if (byte_value == 0U) {
+            break;
+        }
+        if (candidate_count >= candidate_capacity) {
+            size_t new_capacity = candidate_capacity * 2U;
+            char *new_heap = NULL;
+            if (new_capacity <= candidate_capacity) {
+                free(candidate_heap);
+                return VM_EXEC_STATUS_OK;
+            }
+            new_heap = (char *)malloc(new_capacity);
+            if (new_heap == NULL) {
+                free(candidate_heap);
+                return VM_EXEC_STATUS_OK;
+            }
+            memcpy(new_heap, candidate_text, candidate_count);
+            free(candidate_heap);
+            candidate_heap = new_heap;
+            candidate_text = candidate_heap;
+            candidate_capacity = new_capacity;
+        }
+        candidate_text[candidate_count] = (char)byte_value;
+        candidate_count += 1U;
+    }
+
+    if (read_size == 0U || index == limit ||
+        masm32_sim_wasm_console_append_would_exceed_limit(vm_program_console(vm), candidate_text, candidate_count)) {
+        free(candidate_heap);
+        return VM_EXEC_STATUS_OK;
+    }
+
+    uninitialized_count = masm32_sim_wasm_count_uninitialized_read_bytes(storage, edx, read_size, layout_policy);
+    if (uninitialized_count == 0U) {
+        free(candidate_heap);
+        return VM_EXEC_STATUS_OK;
+    }
+    if (masm32_sim_wasm_validation_strict_uninitialized_reads(validation_mode)) {
+        masm32_sim_wasm_fill_uninitialized_read_diagnostic(
+            &storage->uninitialized_read_violation,
+            storage,
+            instruction,
+            edx,
+            read_size,
+            uninitialized_count
+        );
+        if (!storage->uninitialized_read_violation.has_source_span) {
+            masm32_sim_wasm_copy_instruction_source_span(
+                instruction,
+                storage->source_text,
+                &storage->uninitialized_read_violation.source_column,
+                &storage->uninitialized_read_violation.source_byte_offset,
+                &storage->uninitialized_read_violation.source_span_length,
+                &storage->uninitialized_read_violation.has_source_span
+            );
+        }
+        storage->has_uninitialized_read_violation = true;
+        free(candidate_heap);
+        return VM_EXEC_STATUS_MEMORY_ERROR;
+    }
+    if (storage->uninitialized_read_warning_count < (size_t)MASM32_SIM_WASM_MAX_UNINITIALIZED_READ_WARNINGS) {
+        Masm32SimWasmUninitializedReadDiagnostic *warning = &storage->uninitialized_read_warnings[storage->uninitialized_read_warning_count];
+        masm32_sim_wasm_fill_uninitialized_read_diagnostic(warning, storage, instruction, edx, read_size, uninitialized_count);
+        if (!warning->has_source_span) {
+            masm32_sim_wasm_copy_instruction_source_span(
+                instruction,
+                storage->source_text,
+                &warning->source_column,
+                &warning->source_byte_offset,
+                &warning->source_span_length,
+                &warning->has_source_span
+            );
+        }
+        storage->uninitialized_read_warning_count += 1U;
+    }
+
+    free(candidate_heap);
+    return VM_EXEC_STATUS_OK;
+}
+
 /// Validates planned memory reads for the next instruction before stepping it.
 ///
 /// @param storage Source-run storage to mutate.
@@ -5190,6 +5385,9 @@ static VmExecStatus masm32_sim_wasm_validate_uninitialized_reads_before_step(
     instruction = &vm->program[vm->instruction_pointer];
     if (masm32_sim_wasm_next_instruction_is_strict_root_ret(vm)) {
         return VM_EXEC_STATUS_OK;
+    }
+    if (instruction->opcode == VM_IR_OPCODE_IRVINE32_WRITESTRING) {
+        return masm32_sim_wasm_validate_writestring_uninitialized_before_step(storage, vm, instruction, validation_mode, layout_policy);
     }
     read_count = masm32_sim_wasm_collect_planned_reads(instruction, reads, sizeof(reads) / sizeof(reads[0]));
     for (index = 0U; index < read_count; index += 1U) {
@@ -6793,6 +6991,35 @@ static const char *masm32_sim_wasm_memory_access_name(VmMemoryAccessType access_
     }
 }
 
+/// Returns whether one executor diagnostic is a Phase 89 WriteString checked-read failure.
+///
+/// @param diagnostic Executor diagnostic to inspect.
+/// @return true when the diagnostic belongs to a failing virtual `WriteString` memory read.
+static bool masm32_sim_wasm_diagnostic_is_writestring_read_failure(const VmExecDiagnostic *diagnostic) {
+    return diagnostic != NULL &&
+           diagnostic->status == VM_EXEC_STATUS_MEMORY_ERROR &&
+           diagnostic->has_instruction &&
+           diagnostic->instruction.opcode == VM_IR_OPCODE_IRVINE32_WRITESTRING &&
+           diagnostic->memory_diagnostic.access_type == VM_MEMORY_ACCESS_READ;
+}
+
+/// Returns whether one executor diagnostic belongs to a fatal Phase 89 WriteString call.
+///
+/// @param diagnostic Executor diagnostic to inspect.
+/// @param status Final execution status associated with the source run.
+/// @return true when the diagnostic was produced by a failing virtual `WriteString` instruction.
+static bool masm32_sim_wasm_diagnostic_is_writestring_fatal(
+    const VmExecDiagnostic *diagnostic,
+    VmExecStatus status
+) {
+    return diagnostic != NULL &&
+           diagnostic->has_instruction &&
+           diagnostic->instruction.opcode == VM_IR_OPCODE_IRVINE32_WRITESTRING &&
+           (status == VM_EXEC_STATUS_MEMORY_ERROR ||
+            status == VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED ||
+            status == VM_EXEC_STATUS_STRING_SCAN_LIMIT_EXCEEDED);
+}
+
 /// Builds a user-facing memory error summary from structured executor diagnostics.
 ///
 /// @param diagnostic Executor diagnostic containing memory failure context.
@@ -6805,6 +7032,7 @@ static const char *masm32_sim_wasm_format_memory_error_message(
     size_t buffer_size
 ) {
     const char *memory_status_name = "memory-error";
+    const char *message_code = "memory-error";
     const char *access_name = "access";
     const VmMemoryDiagnostic *memory_diagnostic = NULL;
 
@@ -6823,6 +7051,7 @@ static const char *masm32_sim_wasm_format_memory_error_message(
     if (memory_status_name == NULL) {
         memory_status_name = "memory-error";
     }
+    message_code = masm32_sim_wasm_diagnostic_is_writestring_read_failure(diagnostic) ? "invalid-memory-read" : memory_status_name;
 
     memory_diagnostic = &diagnostic->memory_diagnostic;
     access_name = masm32_sim_wasm_memory_access_name(memory_diagnostic->access_type);
@@ -6873,7 +7102,7 @@ static const char *masm32_sim_wasm_format_memory_error_message(
                 );
             }
         }
-        return memory_status_name;
+        return message_code;
     }
 
     if (diagnostic->memory_status == VM_MEMORY_STATUS_UNSUPPORTED_CODE_MEMORY_ACCESS) {
@@ -6888,7 +7117,7 @@ static const char *masm32_sim_wasm_format_memory_error_message(
                 memory_diagnostic->size == 1U ? "" : "s"
             );
         }
-        return memory_status_name;
+        return message_code;
     }
 
     if (diagnostic->memory_status == VM_MEMORY_STATUS_INVALID_ADDRESS) {
@@ -6903,7 +7132,7 @@ static const char *masm32_sim_wasm_format_memory_error_message(
                 memory_diagnostic->size == 1U ? "" : "s"
             );
         }
-        return memory_status_name;
+        return message_code;
     }
 
     if (diagnostic->memory_status == VM_MEMORY_STATUS_PERMISSION_DENIED) {
@@ -6921,7 +7150,7 @@ static const char *masm32_sim_wasm_format_memory_error_message(
                 region_name != NULL ? region_name : ""
             );
         }
-        return memory_status_name;
+        return message_code;
     }
 
     if (buffer != NULL && buffer_size > 0U) {
@@ -6936,7 +7165,7 @@ static const char *masm32_sim_wasm_format_memory_error_message(
         );
     }
 
-    return memory_status_name;
+    return message_code;
 }
 
 /// Returns whether two ASCII strings match case-insensitively.
@@ -7641,7 +7870,8 @@ static bool masm32_sim_json_append_exec_message(
                    status == VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE ||
                    status == VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE ||
                    status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED ||
-                   status == VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED) {
+                   status == VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED ||
+                   status == VM_EXEC_STATUS_STRING_SCAN_LIMIT_EXCEEDED) {
             masm32_sim_wasm_copy_instruction_source_span(
                 &diagnostic->instruction,
                 g_masm32_sim_wasm_run_storage.source_text,
@@ -7717,6 +7947,9 @@ static bool masm32_sim_json_append_exec_message(
         message_kind = "resource-limit-error";
         message_code = "console-output-limit-exceeded";
         message_text = "Program Console output would exceed the configured byte or line limit. Execution stopped before appending partial output.";
+    } else if (status == VM_EXEC_STATUS_STRING_SCAN_LIMIT_EXCEEDED) {
+        message_code = "string-scan-limit-exceeded";
+        message_text = "WriteString scanned the configured byte limit without reading a null terminator. Execution stopped before appending partial output.";
     } else if (status == VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME) {
         message_code = "local-operand-no-active-frame";
         if (diagnostic != NULL && diagnostic->has_local_name && diagnostic->has_procedure_name) {
@@ -8202,7 +8435,9 @@ static const char *masm32_sim_wasm_build_run_json(
             parser_result != NULL ? parser_result->diagnostic_count : 0U,
             &has_message
         );
-        if (exec_status == VM_EXEC_STATUS_DIVIDE_BY_ZERO || exec_status == VM_EXEC_STATUS_QUOTIENT_OVERFLOW) {
+        if (exec_status == VM_EXEC_STATUS_DIVIDE_BY_ZERO ||
+            exec_status == VM_EXEC_STATUS_QUOTIENT_OVERFLOW ||
+            masm32_sim_wasm_diagnostic_is_writestring_fatal(vm != NULL ? vm_last_diagnostic(vm) : NULL, exec_status)) {
             (void)masm32_sim_json_append_uninitialized_read_warnings(&writer, storage, &has_message);
         }
         (void)masm32_sim_json_append_procedure_fallthrough_warnings(&writer, storage, &has_message);
@@ -9104,6 +9339,14 @@ static const char *masm32_sim_wasm_run_source_json_internal_with_procedure_fallt
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON, startup_register_flag_mode, uninitialized_storage_visible_byte_mode);
     }
     vm_initialized = true;
+    if (g_masm32_sim_wasm_writestring_scan_limit_override != 0U) {
+        exec_status = vm_set_irvine32_writestring_scan_limit(vm, g_masm32_sim_wasm_writestring_scan_limit_override);
+        if (exec_status != VM_EXEC_STATUS_OK) {
+            const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON, startup_register_flag_mode, uninitialized_storage_visible_byte_mode);
+            vm_deinit(vm);
+            return json;
+        }
+    }
 
     exec_status = vm_set_root_ret_mode(vm, masm32_sim_wasm_map_root_ret_mode(root_ret_mode));
     if (exec_status != VM_EXEC_STATUS_OK) {
@@ -9722,6 +9965,40 @@ MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_instruction_l
 ) {
     return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), masm32_sim_wasm_default_startup_state_notice_setting(), MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, instruction_limit,
         MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE, false);
+}
+
+/// Parses and executes source with a test-only WriteString scan limit override.
+///
+/// @param source Null-terminated MASM-like source text.
+/// @param scan_limit_bytes Positive maximum bytes one WriteString call may scan.
+/// @return Pointer to a null-terminated JSON result string.
+MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_writestring_scan_limit(
+    const char *source,
+    uint32_t scan_limit_bytes
+) {
+    const char *json = NULL;
+
+    if (scan_limit_bytes == 0U) {
+        return masm32_sim_wasm_build_run_json(
+            MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT,
+            NULL,
+            NULL,
+            NULL,
+            VM_EXEC_STATUS_INVALID_ARGUMENT,
+            NULL,
+            NULL,
+            NULL,
+            false,
+            false,
+            MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+            MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO
+        );
+    }
+
+    g_masm32_sim_wasm_writestring_scan_limit_override = scan_limit_bytes;
+    json = masm32_sim_wasm_run_source_json(source);
+    g_masm32_sim_wasm_writestring_scan_limit_override = 0U;
+    return json;
 }
 
 const char *masm32_sim_wasm_run_source_json_with_automatic_layout_policy(const char *source, const VmLayoutPolicy *base_policy) {

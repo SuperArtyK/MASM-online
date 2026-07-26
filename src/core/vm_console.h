@@ -5,9 +5,10 @@
  * The Program Console is the simulated program output stream. Simulator-owned
  * diagnostics, status text, worker pings, and UI errors must use Simulator
  * Messages instead. Phase 86 added deterministic Program Console byte and line
- * limits. Phase 87 routes virtual Irvine32 `Crlf` through this buffer, and
- * Phase 88 routes direct `WriteChar` output through the same buffer while
- * keeping non-target Irvine32 output routines deferred to later milestones.
+ * limits. Phase 87 routes virtual Irvine32 `Crlf` through this buffer, Phase
+ * 88 routes direct `WriteChar` output through it, and Phase 89 routes direct
+ * `WriteString` output through it while keeping non-target Irvine32 output
+ * routines deferred to later milestones.
  */
 
 #ifndef MASM32_SIM_VM_CONSOLE_H

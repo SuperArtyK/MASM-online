@@ -185,6 +185,20 @@ const char *masm32_sim_wasm_run_source_json_with_instruction_limit(
     uint32_t instruction_limit
 );
 
+/// Parses and executes source with a test-only WriteString scan limit.
+///
+/// This helper exists for native Phase 89 boundary tests. Normal browser
+/// execution uses @ref VM_IRVINE32_WRITESTRING_SCAN_LIMIT_BYTES and exposes no
+/// user-facing scan-limit setting.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param scan_limit_bytes Positive maximum bytes one WriteString call may scan.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_writestring_scan_limit(
+    const char *source,
+    uint32_t scan_limit_bytes
+);
+
 /// Parses and executes source, then applies test-only synthetic Program Console output.
 ///
 /// This helper is restricted to native tests for Program Console output-limit

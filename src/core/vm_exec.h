@@ -74,6 +74,9 @@
 /// Default Phase 72 direct user-procedure CALL depth limit.
 #define VM_DEFAULT_CALL_DEPTH_LIMIT 64u
 
+/// Default maximum bytes scanned by virtual Irvine32 `WriteString` before a terminator must be found.
+#define VM_IRVINE32_WRITESTRING_SCAN_LIMIT_BYTES 1048576U
+
 /// Minimum accepted Phase 72 direct user-procedure CALL depth limit.
 #define VM_MIN_CALL_DEPTH_LIMIT 1u
 
@@ -144,7 +147,9 @@ typedef enum VmExecStatus {
     /// A Phase 80 LOCAL operand executed without its owning active automatic frame.
     VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME,
     /// Program Console output would exceed the configured byte or line limit.
-    VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED
+    VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED,
+    /// Virtual Irvine32 WriteString scanned its configured byte limit without reading a null terminator.
+    VM_EXEC_STATUS_STRING_SCAN_LIMIT_EXCEEDED
 } VmExecStatus;
 
 /// Describes the lifetime state for one Phase 79 automatic LOCAL frame or descriptor.
@@ -503,6 +508,8 @@ typedef struct Vm {
     VmEntryProcedureEndMode entry_procedure_end_mode;
     /// Configured Phase 72 direct user-procedure CALL depth limit.
     uint32_t call_depth_limit;
+    /// Configured virtual Irvine32 WriteString scan limit in bytes.
+    uint32_t irvine32_writestring_scan_limit_bytes;
     /// Active Phase 79 automatic LOCAL frames.
     VmExecLocalFrame active_local_frames[VM_MAX_CALL_DEPTH_LIMIT];
     /// Number of active or LEAVE-released LOCAL frame slots.
@@ -660,6 +667,22 @@ uint32_t vm_call_depth_limit(const Vm *vm);
 /// @param vm VM instance to inspect.
 /// @return Current depth, or zero when @p vm is NULL.
 uint32_t vm_current_call_depth(const Vm *vm);
+
+/// Configures the virtual Irvine32 `WriteString` byte-scan safety cap.
+///
+/// This is primarily a test/configuration hook. Normal browser execution uses
+/// @ref VM_IRVINE32_WRITESTRING_SCAN_LIMIT_BYTES. The limit must be nonzero.
+///
+/// @param vm VM instance to mutate.
+/// @param limit_bytes Positive maximum bytes to scan before failing.
+/// @return VM_EXEC_STATUS_OK on success, or VM_EXEC_STATUS_INVALID_ARGUMENT.
+VmExecStatus vm_set_irvine32_writestring_scan_limit(Vm *vm, uint32_t limit_bytes);
+
+/// Returns the configured virtual Irvine32 `WriteString` scan limit.
+///
+/// @param vm VM instance to inspect.
+/// @return Configured limit, or @ref VM_IRVINE32_WRITESTRING_SCAN_LIMIT_BYTES when unavailable.
+uint32_t vm_irvine32_writestring_scan_limit(const Vm *vm);
 
 /// Returns the most recent Phase 71D procedure-fallthrough diagnostic metadata.
 ///

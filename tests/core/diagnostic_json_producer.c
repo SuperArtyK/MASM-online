@@ -616,6 +616,8 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     int has_entry_procedure_end_mode = 0;
     uint32_t call_depth_limit = 64U;
     int has_call_depth_limit = 0;
+    uint32_t writestring_scan_limit = 0U;
+    int has_writestring_scan_limit = 0;
 
     if (source == NULL) {
         return diagnostic_json_producer_fail("source fixture was not loaded");
@@ -639,8 +641,13 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT", &call_depth_limit, &has_call_depth_limit) != 0) {
         return 1;
     }
+    if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_WRITESTRING_SCAN_LIMIT", &writestring_scan_limit, &has_writestring_scan_limit) != 0) {
+        return 1;
+    }
 
-    if (has_call_depth_limit || has_root_ret_mode || has_procedure_fallthrough_policy || has_entry_procedure_end_mode) {
+    if (has_writestring_scan_limit) {
+        json = masm32_sim_wasm_run_source_json_with_writestring_scan_limit(source, writestring_scan_limit);
+    } else if (has_call_depth_limit || has_root_ret_mode || has_procedure_fallthrough_policy || has_entry_procedure_end_mode) {
         json = masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_entry_end_and_call_depth_settings(
             source,
             MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,

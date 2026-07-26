@@ -1678,7 +1678,7 @@ External/API non-goal forms include:
 - host-filesystem include or library targets;
 - far calls, segmented calls, or native-address calls when they imply native x86, PE, Windows, or linker behavior.
 
-Recognized Irvine32 routine and terminator names are not user procedure symbols. Before the owning Irvine32 routine-dispatch phase implements a specific routine, a source form such as `call WriteString` must be classified as a recognized-but-deferred or recognized-but-unsupported Irvine32 routine call, not as a user-procedure call.
+Recognized Irvine32 routine and terminator names are not user procedure symbols. Before the owning Irvine32 routine-dispatch phase implements a specific routine, a source form such as `call WriteDec` must be classified as a recognized-but-deferred or recognized-but-unsupported Irvine32 routine call, not as a user-procedure call. Implemented direct forms such as `call WriteString` must route through their simulator-defined Irvine32 intrinsic path rather than user-procedure lookup.
 
 A future phase may implement selected Irvine32 routine dispatch, but that work must remain separate from direct user-procedure `CALL`. Direct user-procedure `CALL` must not execute, alias, shadow, or special-case Irvine32 routine names as host callbacks, external imports, WinAPI calls, PE import thunks, linker symbols, or native procedures.
 
@@ -3870,8 +3870,8 @@ CALL target classification must preserve this boundary:
 
 - `call UserProc` may become a user procedure call only when `UserProc PROC` exists and the CALL phase accepts direct user-procedure calls.
 - `call WriteString` must classify through the Irvine32 registry, not through the user procedure table.
-- Before the owning Irvine32 dispatch phase implements `WriteString`, `call WriteString` must produce a recognized-deferred or recognized-unsupported Irvine32 diagnostic.
-- After a later Irvine32 dispatch phase implements `WriteString`, dispatch may route to simulator-defined Irvine32 behavior, but `WriteString` still does not become an ordinary user procedure symbol.
+- Before the owning Irvine32 dispatch phase implements a recognized routine such as `WriteDec`, `call WriteDec` must produce a recognized-deferred or recognized-unsupported Irvine32 diagnostic.
+- After Phase 89, direct `call WriteString` routes to simulator-defined Irvine32 behavior, but `WriteString` still does not become an ordinary user procedure symbol.
 - A user declaration such as `WriteString PROC` must be rejected or otherwise handled through the reserved-word/registry collision policy. It must not silently shadow the virtual Irvine32 routine.
 
 `OPTION CASEMAP:NONE` affects accepted user-defined symbols. It does not make recognized Irvine32 routine names case-sensitive, and it does not make recognized Irvine32 routine names available as user procedure names.
@@ -4034,6 +4034,8 @@ Effect:
 
 Before implementing an Irvine32 routine phase, the guide must state exact register, memory, output, input, and flag behavior. Implementations must not infer behavior from routine names alone.
 
+When a virtual Irvine32 routine receives or computes an address, that address is always a simulator VM address in the project's documented memory layout. It is never a browser object reference, host process pointer, Wasm implementation pointer, Windows virtual address, PE relative virtual address, host file offset, or external-library pointer. Irvine32 routines that read or write simulated memory must use the central checked VM memory helper path and must participate in the active memory-safety and teaching-diagnostic policies.
+
 Output routines:
 
 ```text
@@ -4059,10 +4061,36 @@ Crlf:
   These Crlf diagnostics must not use unsupported-irvine32-routine or unsupported-irvine-invoke, because those codes imply deferred routine behavior rather than invalid use of an implemented routine.
 
 WriteString:
-  Input: EDX = address of a null-terminated byte string.
-  Reads bytes through checked VM memory helpers until 00h.
-  Stops with a runtime diagnostic if no terminator appears before unreadable memory or the configured scan limit.
-  Decodes bytes using the simulator's documented console byte policy, initially ASCII-compatible byte-to-character mapping.
+  Accepted executable source forms after INCLUDE Irvine32.inc:
+    call WriteString
+  The Irvine32 routine name is matched case-insensitively even when OPTION CASEMAP:NONE is active.
+  Input: EDX = simulated-memory address of a null-terminated byte string.
+  EDX is not a host pointer, browser pointer, Wasm linear-memory pointer, PE RVA, Windows virtual address, file offset, or external-library address.
+  Reads bytes one at a time through checked VM memory helpers until one of the following first occurs:
+    - a 00h terminator byte is read successfully;
+    - a mandatory checked-memory read failure occurs;
+    - strict uninitialized-read policy reports a fatal runtime diagnostic;
+    - the configured Program Console output limit would be exceeded;
+    - the configured WriteString scan limit is reached before a terminator is found.
+  The null terminator is read for validation and termination, but it is not printed.
+  Nonzero bytes before the terminator are appended to Program Console according to the simulator's documented Program Console byte policy.
+  For a no-partial-output fatal failure, the failing WriteString call appends none of its candidate string bytes to Program Console.
+  Successful bytes may be committed only after the routine has passed all fatal validation required by the implementation guide's WriteString output-commit policy.
+  Uses a named string scan limit. The implementation guide owns the exact default value, test override path, diagnostic code/message, and boundary tests.
+  Preserves all modeled registers, including EDX.
+  Preserves modeled flags and flag-validity metadata.
+  Does not write simulated memory.
+  Does not create memory-change rows.
+  On success, writes program output only to Program Console.
+  On success, does not write ordinary program output to Simulator Messages.
+  On success, may write non-fatal warnings to Simulator Messages only when active diagnostic policy requires them, such as default uninitialized-read warning mode.
+  Default uninitialized-read warning mode emits non-fatal Simulator Messages warnings for uninitialized-origin bytes and continues using deterministic simulator bytes unless a later fatal diagnostic occurs.
+  Strict uninitialized-read mode stops before appending candidate string bytes from the failing WriteString call.
+  Explicit uninitialized-read off suppresses only the uninitialized-read teaching diagnostic. It does not suppress mandatory memory safety, output-limit, scan-limit, .CONST, region, permission, object-bounds, or unrelated diagnostics.
+  CALL WriteString without INCLUDE Irvine32.inc is an assembly error, not an unsupported-feature diagnostic.
+  Bare WriteString after INCLUDE Irvine32.inc is an assembly error, not an unsupported-feature diagnostic.
+  INVOKE WriteString remains future-owned until a later accepted phase implements that exact source form.
+  Implementing direct CALL WriteString must not implement INVOKE WriteString, numeric Irvine32 output routines, input routines, debug routines, random routines, file routines, macros, WinAPI behavior, PE loading/linking, external libraries, host callbacks, host filesystem behavior, or full x86 emulation.
 
 WriteChar:
   Accepted source forms after INCLUDE Irvine32.inc:
@@ -4082,22 +4110,90 @@ WriteChar:
   Bare WriteChar is an assembly error, not an unsupported-feature diagnostic.
   INVOKE WriteChar remains future-owned until a later accepted phase implements that source form.
 
-WriteInt:
-  Input: EAX interpreted as signed 32-bit integer.
-  Appends decimal signed text with a leading minus sign for negative values.
-
 WriteDec:
-  Input: EAX interpreted as unsigned 32-bit integer.
-  Appends unsigned decimal text.
+  Future-owned until Phase 90 or a later accepted replacement phase implements it.
+  Accepted executable source forms after INCLUDE Irvine32.inc, once implemented:
+    call WriteDec
+  Matching must be case-insensitive for the Irvine32 routine name even when OPTION CASEMAP:NONE is active.
+  CALL WriteDec without INCLUDE Irvine32.inc must be an assembly error after the routine is implemented.
+  Bare WriteDec must be an assembly error after the routine is implemented.
+  INVOKE WriteDec remains future-owned until a later accepted phase implements that exact source form.
+  Input: EAX interpreted as an unsigned 32-bit integer.
+  Output: append the shortest base-10 unsigned decimal representation of EAX to Program Console.
+  Values must be formatted in the inclusive range 0 through 4294967295.
+  Do not append leading plus signs, leading zeroes, grouping separators, whitespace, CR, LF, prefixes, or suffixes.
+  Preflight the complete formatted text against Program Console byte and line limits.
+  On output-limit failure, append none of the formatted digits from the failing call.
+  Preserve all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
+  Write no simulated memory.
+  Write no Simulator Messages on success except non-program-output diagnostics required by active policy.
+  Implementing WriteDec must not implement WriteInt, WriteHex, WriteBin, WriteString INVOKE, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation.
+
+WriteInt:
+  Future-owned until Phase 91 or a later accepted replacement phase implements it.
+  Accepted executable source forms after INCLUDE Irvine32.inc, once implemented:
+    call WriteInt
+  Matching must be case-insensitive for the Irvine32 routine name even when OPTION CASEMAP:NONE is active.
+  CALL WriteInt without INCLUDE Irvine32.inc must be an assembly error after the routine is implemented.
+  Bare WriteInt must be an assembly error after the routine is implemented.
+  INVOKE WriteInt remains future-owned until a later accepted phase implements that exact source form.
+  Input: EAX interpreted as a signed 32-bit two's-complement integer.
+  Output: append the shortest base-10 signed decimal representation of EAX to Program Console.
+  Values must be formatted in the inclusive range -2147483648 through 2147483647.
+  Negative values append one leading '-' byte followed immediately by decimal digits.
+  Nonnegative values must not append a leading '+' byte.
+  Do not append leading zeroes, grouping separators, whitespace, CR, LF, prefixes, or suffixes.
+  Preflight the complete formatted text, including the minus sign when present, against Program Console byte and line limits.
+  On output-limit failure, append none of the formatted sign or digits from the failing call.
+  Preserve all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
+  Write no simulated memory.
+  Write no Simulator Messages on success except non-program-output diagnostics required by active policy.
+  Implementing WriteInt must not implement WriteDec, WriteHex, WriteBin, WriteString INVOKE, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation.
 
 WriteHex:
-  Input: EAX.
-  Appends eight uppercase hexadecimal digits by default unless a later phase documents a different width policy.
+  Future-owned until Phase 92 or a later accepted replacement phase implements it.
+  Accepted executable source forms after INCLUDE Irvine32.inc, once implemented:
+    call WriteHex
+  Matching must be case-insensitive for the Irvine32 routine name even when OPTION CASEMAP:NONE is active.
+  CALL WriteHex without INCLUDE Irvine32.inc must be an assembly error after the routine is implemented.
+  Bare WriteHex must be an assembly error after the routine is implemented.
+  INVOKE WriteHex remains future-owned until a later accepted phase implements that exact source form.
+  Input: EAX interpreted as an unsigned 32-bit value.
+  Output: append exactly eight uppercase hexadecimal digits for EAX to Program Console.
+  Digits must be 0-9 and A-F only.
+  Do not append 0x, h, leading/trailing whitespace, grouping separators, CR, LF, prefixes, or suffixes.
+  Preflight the complete 8-byte formatted text against Program Console byte and line limits.
+  On output-limit failure, append none of the formatted digits from the failing call.
+  Preserve all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
+  Write no simulated memory.
+  Write no Simulator Messages on success except non-program-output diagnostics required by active policy.
+  Implementing WriteHex must not implement WriteDec, WriteInt, WriteBin, WriteString INVOKE, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation.
 
 WriteBin:
-  Input: EAX.
-  Appends 32 binary digits by default unless a later phase documents grouping or width policy.
+  Future-owned until Phase 93 or a later accepted replacement phase implements it.
+  Accepted executable source forms after INCLUDE Irvine32.inc, once implemented:
+    call WriteBin
+  Matching must be case-insensitive for the Irvine32 routine name even when OPTION CASEMAP:NONE is active.
+  CALL WriteBin without INCLUDE Irvine32.inc must be an assembly error after the routine is implemented.
+  Bare WriteBin must be an assembly error after the routine is implemented.
+  INVOKE WriteBin remains future-owned until a later accepted phase implements that exact source form.
+  Input: EAX interpreted as an unsigned 32-bit value.
+  Output: append exactly 32 binary digits for EAX to Program Console, most-significant bit first.
+  Digits must be 0 and 1 only.
+  Do not append grouping separators, spaces between digits, b suffix, leading/trailing whitespace, CR, LF, prefixes, or suffixes.
+  Preflight the complete 32-byte formatted text against Program Console byte and line limits.
+  On output-limit failure, append none of the formatted digits from the failing call.
+  Preserve all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
+  Write no simulated memory.
+  Write no Simulator Messages on success except non-program-output diagnostics required by active policy.
+  Implementing WriteBin must not implement WriteDec, WriteInt, WriteHex, WriteString INVOKE, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation.
 ```
+
+`DumpRegs` and `DumpMem` are future-owned until their guide phases explicitly implement them. Their names must not be used as permission to infer Irvine32, MASM32, Windows, debugger, PE/linker, host, or full-x86 behavior.
+
+Before `DumpRegs` is implemented, the implementation guide must define the exact Program Console text contract, including register order, flag order, hex width, uppercase/lowercase policy, spaces, line-feed behavior, pseudo-EIP source, EFLAGS derivation, no-partial-output behavior, preservation rules, source-form diagnostics, rendered-message diagnostics, and source-run output-contract token. The first implementation must not print host addresses, Wasm addresses, native instruction pointers, PE/RVA/linker addresses, source byte offsets, or raw VM instruction indexes as `EIP`.
+
+Before `DumpMem` is implemented, the implementation guide must define the exact calling convention, accepted element sizes, maximum count, checked-address arithmetic behavior, checked memory-read behavior, optional memory-policy behavior, row width, address format, element byte order, element text width, line-feed behavior, no-partial-output behavior, diagnostic precedence, rendered-message diagnostics, and source-run output-contract token. `DumpMem` reads simulated VM memory only. It must not read host process memory, browser memory, Wasm implementation internals, PE files, source files, external-library memory, or the host filesystem.
 
 Input routines:
 
@@ -4197,7 +4293,7 @@ If a precise future phase is known, the diagnostic should name both the phase nu
 Acceptable diagnostic wording examples:
 
 ```text
-WriteString is a recognized Irvine32 routine, but executable Irvine32 output routines are deferred to Phase <N> - <phase title>.
+WriteDec is a recognized Irvine32 routine, but executable numeric Irvine32 output routines are deferred to Phase <N> - <phase title>.
 ```
 
 ```text
@@ -6132,15 +6228,20 @@ The rendered Simulator Messages form must preserve the existing renderer format:
 [<category>] <code> line <line>, column <column>, byte offset <byte-offset>, span length <span-length>: <exact primary message text>
 ```
 
-The following diagnostics remain `unsupported-feature` unless a later accepted phase implements the named routine or source form. Direct `CALL WriteChar` after `INCLUDE Irvine32.inc` is implemented and is not part of this deferred table:
+The following diagnostics remain `unsupported-feature` unless a later accepted phase implements the named routine or source form. Direct `CALL Crlf`, zero-argument `INVOKE Crlf`, direct `CALL WriteChar`, and direct `CALL WriteString` after `INCLUDE Irvine32.inc` are implemented and are not part of this deferred table in the Phase 89-complete repository state.
 
 | Source condition | Category | Code | Rationale |
 |---|---|---|---|
-| `CALL WriteString` or another recognized but not yet implemented Irvine32 routine call other than implemented `Crlf` and `WriteChar` forms | `unsupported-feature` | `unsupported-irvine32-routine` | The routine body is recognized but intentionally not executable yet. |
-| `INVOKE WriteString`, `INVOKE WriteChar`, or another recognized but not yet implemented Irvine32 routine through INVOKE | `unsupported-feature` | `unsupported-irvine-invoke` | Irvine32 INVOKE dispatch for that routine remains future-owned. |
-| External/API, WinAPI, CRT, MASM32 runtime, include-library, object-linking, PE-loader, or host-filesystem behavior | `unsupported-feature` or a more specific unsupported/non-goal code | Existing or future unsupported/non-goal code | The behavior is outside the current simulator boundary or outside the v1 product boundary. |
+| `CALL WriteDec`, `CALL WriteInt`, `CALL WriteHex`, `CALL WriteBin`, or another recognized but not yet implemented Irvine32 routine call other than implemented `Crlf`, `WriteChar`, and `WriteString` forms | `unsupported-feature` | `unsupported-irvine32-routine` | The routine body is recognized but intentionally not executable yet in the Phase 89-complete repository state. |
+| `INVOKE WriteString`, `INVOKE WriteChar`, or another recognized but not yet implemented Irvine32 routine through `INVOKE` | `unsupported-feature` | `unsupported-irvine-invoke` | Irvine32 `INVOKE` dispatch for that routine remains future-owned unless a later accepted phase explicitly implements that exact source form. |
+| External/API, WinAPI, CRT, MASM32 runtime, include-library, object-linking, PE-loader, host-callback, host-filesystem, native-process, or full-x86 behavior | `unsupported-feature` or a more specific unsupported/non-goal code | Existing or future unsupported/non-goal code | The behavior is outside the current simulator boundary or outside the v1 product boundary. These behaviors must not be treated as ordinary deferred Irvine32 routine work. |
 
-When a future phase implements one routine or one source form from a previously deferred family, only that implemented slice moves out of the generic unsupported path. Future-owned siblings must remain deferred. For example, implementing `Crlf` and direct `CALL WriteChar` must not make `WriteString`, numeric output, input routines, macros, WinAPI behavior, linking, `INVOKE WriteChar`, or general Irvine32 INVOKE dispatch executable.
+When a future phase implements one routine or one source form from a previously deferred family, only that implemented slice moves out of the generic unsupported path. Future-owned siblings must remain deferred. For example, implementing `Crlf`, direct `CALL WriteChar`, and direct `CALL WriteString` must not make numeric output, input routines, macros, WinAPI behavior, linking, `INVOKE WriteChar`, `INVOKE WriteString`, or general Irvine32 `INVOKE` dispatch executable.
+
+Phase 89 implementation status: direct `CALL WriteString` after `INCLUDE Irvine32.inc` is implemented and must not appear in the deferred direct-call row. `CALL WriteString` without `INCLUDE Irvine32.inc` is documented as `assembly-error missing-irvine32-include`. Bare `WriteString` after include is documented as `assembly-error invalid-irvine32-call-form`. `INVOKE WriteString` remains in the `unsupported-irvine-invoke` row unless a later accepted phase explicitly implements that exact `INVOKE` source form.
+
+A future phase that implements one Irvine32 routine source form changes only that exact source form. For example, implementing direct `CALL WriteString` after `INCLUDE Irvine32.inc` must not make `INVOKE WriteString`, `WriteDec`, `WriteInt`, `WriteHex`, `WriteBin`, Irvine32 input routines, Irvine32 debug routines, Irvine32 random routines, Irvine32 file routines, Irvine32 macros, WinAPI calls, external-library calls, PE loading/linking, host callbacks, host filesystem access, native process behavior, or full x86 behavior executable. Those sibling or boundary-crossing behaviors remain deferred or unsupported until a later accepted phase explicitly changes that exact behavior and adds focused tests.
+
 
 
 `source-load-error` is for browser/project source-loading failures only. It must not be used for PE loading, object linking, import-library loading, host-file loading, Windows loader behavior, or any other linker/loader behavior outside the simulator boundary.

@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 88: Irvine32 WriteChar.
+  Milestone 89: Irvine32 WriteString.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,13 +18,15 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 88: Irvine32 WriteChar</p>
+        <p class="muted">Milestone 89: Irvine32 WriteString</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
+.data
+msg BYTE "Hello from WriteString",0
 .code
 main PROC
-    mov eax, 'A'
-    call WriteChar
+    mov edx, OFFSET msg
+    call WriteString
     call Crlf
     exit
 main ENDP

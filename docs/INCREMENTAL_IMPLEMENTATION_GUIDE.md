@@ -953,6 +953,68 @@ Required tests for any future phase that touches Irvine32 routine recognition:
 - user-symbol case-policy regression proving user symbols still obey `OPTION CASEMAP`;
 - non-goal diagnostic for at least one host-filesystem, WinAPI, linker, PE, or external-symbol path when applicable.
 
+### 2.4f-1 Standing Rule: Irvine32 Memory-Reading and Program Console Routines
+
+This standing rule applies to every future Irvine32 routine phase that reads simulated memory, appends bytes to Program Console, or can fail while preparing Program Console output. The rule is global guidance for future routine phases. It is not a Phase 88-only historical note.
+
+A later phase may add routine-specific behavior, but it must not contradict this standing rule unless that phase explicitly says it is changing the shared policy and adds tests for the changed behavior.
+
+Required stream separation:
+
+- Program output goes only to Program Console.
+- Diagnostics, warnings, notices, runtime errors, execution-status messages, and educational explanations go only to Simulator Messages.
+- No Irvine32 output routine may print diagnostics into Program Console.
+- No diagnostic renderer may move successful Program Console output into Simulator Messages.
+
+Required memory-read path:
+
+- Memory-reading Irvine32 routines must use checked VM memory helpers.
+- A memory-reading routine must not read directly from raw buffers, host memory, browser memory, Wasm linear memory, unchecked internal arrays, external libraries, host files, or PE images.
+- A register that supplies an address to an Irvine32 routine contains a simulator VM address, not a host pointer, browser pointer, Wasm pointer, Windows virtual address, PE RVA, file offset, or external-library pointer.
+- Mandatory Level 1 memory safety checks always remain active. Teaching settings may not disable address, range, region, permission, or overflow protection.
+- `.CONST` reads are allowed by memory-reading output routines. `.CONST` writes remain protected by the central checked write path and are not weakened by any Irvine32 output routine.
+- Section-capacity, section-image, declared-object, object-bounds, and uninitialized-origin policies must participate according to their current opt-in/default rules.
+
+Required validation path for routines with no-partial-output policy:
+
+1. Resolve routine inputs according to the routine-specific phase contract.
+2. Compute each planned memory read address and width required before committing routine-visible output.
+3. Apply mandatory checked-memory validation through the central VM memory helper path.
+4. Apply optional section-capacity, section-image, declared-object, object-bounds, and uninitialized-origin policies according to current project settings.
+5. Apply Program Console byte and line output-limit validation before appending output.
+6. Commit Program Console output only after the routine has passed all fatal validation required by the routine-specific phase.
+
+Required uninitialized-origin behavior:
+
+- After Phase 53C, omitted/default user-facing uninitialized-read behavior is warning mode, not silent mode.
+- Default warning mode emits `uninitialized-read` through Simulator Messages and continues using deterministic simulator bytes unless a later fatal diagnostic occurs.
+- Explicit uninitialized-read off suppresses only the `uninitialized-read` teaching warning. It does not suppress mandatory memory safety, `.CONST` protection, invalid-region errors, unaligned-access warnings, output-limit diagnostics, scan-limit diagnostics, or unrelated diagnostics.
+- Strict uninitialized-read mode is fatal. A routine with no-partial-output policy must stop before consuming uninitialized-origin bytes for output and before appending candidate Program Console text from the failing routine call.
+
+Required failure preservation:
+
+- Fatal routine failures must preserve all modeled registers unless the routine-specific phase explicitly documents a different register mutation contract.
+- Fatal routine failures must preserve modeled flags and flag-validity metadata unless the routine-specific phase explicitly documents a different flag contract.
+- Fatal routine failures must not write simulated memory unless the routine-specific phase explicitly documents a memory-write contract.
+- Fatal routine failures must not create memory-change rows unless the routine-specific phase explicitly documents a memory-write contract.
+- Fatal no-partial-output failures must not append partial Program Console text from the failing routine call.
+- Fatal no-partial-output failures must not emit `execution-complete`.
+
+Required tests for each future Irvine32 routine that reads memory:
+
+- initialized `.data` read succeeds without `uninitialized-read`;
+- `.CONST` read succeeds and does not weaken `.CONST` write protection;
+- `.DATA?`, `?`, or `DUP(?)` bytes that still carry uninitialized-origin metadata emit default `uninitialized-read` warning;
+- explicit uninitialized-read off suppresses only the uninitialized-read warning;
+- strict uninitialized-read mode stops before Program Console output from the failing routine call;
+- invalid address fails before partial Program Console output from the failing routine call;
+- a range that starts valid and crosses into unreadable memory fails before partial Program Console output from the failing routine call;
+- output-limit failure appends no partial Program Console output from the failing routine call;
+- Program Console contains only successful program output;
+- Simulator Messages contain diagnostics, warnings, and execution status only;
+- structured diagnostic JSON includes stable code, severity/category, source line, source column, byte offset, and span length where source location is known;
+- rendered Simulator Messages tests cover every UI-visible diagnostic path introduced or changed by the phase.
+
 ### 2.4g Preserve Source Locations
 
 Every parsed instruction and generated IR instruction must retain:
@@ -25626,131 +25688,402 @@ Implement virtual Irvine32 `WriteChar` independently from newline and string rou
 - Flags and registers are preserved.
 - Output-limit diagnostics render through Simulator Messages.
 
-### Shared Irvine32 Memory-Read and Program Console Output Policy
+### Shared Irvine32 policy note
 
-This shared policy applies to every future Irvine32 routine that reads simulated memory or appends to Program Console. It is a standing implementation rule for the Irvine32 routine phases. A later phase may add routine-specific behavior, but it must not contradict this policy unless the phase explicitly says it is changing the shared policy and adds tests for the change.
+The standing policy for future Irvine32 routines that read simulated memory or append to Program Console is defined in section 2.4f-1, `Standing Rule: Irvine32 Memory-Reading and Program Console Routines`.
 
-Memory-reading Irvine32 routines must use the same checked VM memory helper path as instruction execution.
+Phase 88 `WriteChar` participates only in the Program Console append portion of that policy because it reads the low byte of `AL` and performs no simulated-memory reads.
 
-Required memory-read ordering:
-
-1. Resolve the routine input registers or operands according to the routine's phase contract.
-2. Compute every planned memory read address and width needed before committing routine-visible output when the routine has a no-partial-output policy.
-3. Apply mandatory address, range, region, permission, and overflow checks through checked VM memory helpers.
-4. Apply `.CONST` rules normally: `.CONST` reads are allowed, `.CONST` writes remain protected elsewhere.
-5. Apply optional section-capacity, section-image, and declared-object validation policies only after mandatory Level 1 region checks succeed.
-6. Apply uninitialized-origin diagnostics according to the current global uninitialized-read policy.
-7. If a strict policy emits a runtime error, stop before the routine consumes the bytes for output and before appending partial Program Console text.
-8. If a warning policy emits a non-fatal warning, continue using the deterministic simulator bytes unless a later fatal diagnostic occurs.
-
-Current default user-facing uninitialized-read behavior after Phase 53C - Default Teaching Diagnostics for Existing Warning Modes is warning mode. Therefore, a future Irvine32 routine that reads `.DATA?`, `?`, or `DUP(?)` bytes must emit `uninitialized-read` as a non-fatal Simulator Messages warning by default when those bytes still carry uninitialized-origin metadata.
-
-Explicit uninitialized-read opt-out suppresses only the `uninitialized-read` teaching warning. It does not disable mandatory VM memory safety, `.CONST` protection, invalid-region errors, unaligned-access warnings, output-limit diagnostics, or unrelated diagnostics.
-
-Strict uninitialized-read mode stops before the routine consumes uninitialized-origin bytes for output and before it appends partial Program Console text.
-
-Program Console output must remain separate from Simulator Messages.
-
-Required Program Console output rules:
-
-- Program output goes only to Program Console.
-- Diagnostics, warnings, notices, runtime errors, and execution-status messages go only to Simulator Messages.
-- A routine with a no-partial-output policy must preflight memory reads and output length before appending text.
-- If output-limit validation fails, the routine must emit the appropriate Simulator Messages diagnostic and append no partial Program Console text.
-- Routine failures must preserve registers and modeled flags unless the routine-specific phase explicitly documents a different mutation contract.
-
-Future Irvine32 routine phases must not copy older pre-Phase-53C wording that says default mode emits no uninitialized-read diagnostic. That historical behavior was superseded by Phase 53C - Default Teaching Diagnostics for Existing Warning Modes.
-
-Required tests for each future Irvine32 routine that reads memory:
-
-- default uninitialized-read warning test when reading `.DATA?`, `?`, or `DUP(?)` bytes;
-- explicit uninitialized-read off test;
-- strict uninitialized-read stop-before-output test;
-- invalid address no-partial-output test;
-- Program Console / Simulator Messages separation test.
+Future Irvine32 phases must not treat this note as permission to bypass checked VM memory helpers. Any future routine that reads simulated memory must follow section 2.4f-1 and its routine-specific phase contract.
 
 ## 93. Phase 89 - Irvine32 WriteString
 
 ### Goal
 
-Implement virtual Irvine32 `WriteString` with checked memory reads.
+Implement direct virtual Irvine32 `WriteString` with checked simulated-memory reads and no-partial-output Program Console behavior.
 
-### Accepted syntax
+Phase 89 is the first Irvine32 output routine in the canonical guide that reads a byte string through an address-bearing register. The implementation must therefore follow section 2.4f-1, `Standing Rule: Irvine32 Memory-Reading and Program Console Routines`, and the routine-specific contract in this phase.
+
+Phase 89 must not implement general Irvine32 routine dispatch, general `INVOKE` dispatch for Irvine32 routines, numeric output routines, input routines, debug routines, random routines, file routines, macros, WinAPI calls, PE/linker behavior, external libraries, host callbacks, host filesystem access, or full x86 behavior.
+
+### Accepted syntax and source-form diagnostics
+
+Phase 89 implements exactly one new executable Irvine32 source form:
 
 ```asm
 call WriteString
 ```
 
-### Runtime behavior
+The form is executable only after `INCLUDE Irvine32.inc` has been accepted. The accepted include is the existing virtual Irvine32 include from earlier phases; Phase 89 must not add host include-file lookup, real Irvine32 library loading, MASM include search paths, or filesystem access.
 
-- `EDX` contains the address of a null-terminated byte string.
-- The routine pre-scans one byte at a time through checked memory helpers until the first `00h`, `string_scan_limit_bytes`, or memory/output validation failure.
-- Reading stops at byte `00h`.
-- Nonzero bytes before the terminator are appended to Program Console using the console byte-to-text policy only after validation succeeds.
-- The null terminator is not printed.
-- Modeled flags are preserved.
-- `EDX` is preserved.
-- The routine follows the shared Irvine32 memory-read and Program Console output policy immediately above this phase.
+The Irvine32 routine name is matched case-insensitively even when `OPTION CASEMAP:NONE` is active. For example, `CALL writestring`, `call WriteString`, and `Call wRiTeStRiNg` must classify as the same virtual Irvine32 routine after the include has been accepted.
 
-### Runtime diagnostics
+`CALL WriteString` before `INCLUDE Irvine32.inc` must be an `assembly-error` with code `missing-irvine32-include` and this primary message:
 
-- `invalid-memory-read` if any byte read is outside readable memory.
-- `string-scan-limit-exceeded` / compatibility alias `unterminated-string-output` if no terminator is found before `string_scan_limit_bytes`.
-- `console-output-limit-exceeded` if the validated output would exceed the configured console output limit.
-- `uninitialized-read` warning/error according to the current global uninitialized-read policy when scanned bytes still carry uninitialized-origin metadata. After Phase 53C - Default Teaching Diagnostics for Existing Warning Modes, omitted/default user-facing behavior emits `uninitialized-read` as a non-fatal warning.
+```text
+CALL WriteString requires INCLUDE Irvine32.inc before WriteString can be used as a virtual Irvine32 routine.
+```
 
-### No-partial-output policy
+Bare `WriteString` after `INCLUDE Irvine32.inc` must be an `assembly-error` with code `invalid-irvine32-call-form` and this primary message:
 
-`WriteString` must pre-scan until terminator, `string_scan_limit_bytes`, or configured output limit using checked reads, then append only if the full string is valid and within output limits. Runtime failure must append no partial string.
+```text
+WriteString is a virtual Irvine32 routine and must be called with CALL WriteString.
+```
 
-Strict uninitialized-read mode is a runtime failure for this policy. It must stop before appending Program Console output.
+`INVOKE WriteString` remains future-owned Irvine32 INVOKE routine dispatch and must continue to report `unsupported-irvine-invoke` unless a later accepted phase explicitly implements that exact source form.
 
-Default warning mode is not a runtime failure. It emits `uninitialized-read` through Simulator Messages and continues using deterministic simulator bytes unless a later fatal diagnostic occurs.
+Phase 89 must not make `WriteChar` through `INVOKE`, numeric Irvine32 output routines, input routines, debug routines, random routines, file routines, macros, WinAPI behavior, PE loading/linking, external libraries, host callbacks, host filesystem access, or full x86 behavior executable.
 
-Explicit uninitialized-read off suppresses only the `uninitialized-read` teaching warning. It does not suppress invalid-memory, output-limit, unterminated-string, unaligned-access, or unrelated diagnostics.
+### Runtime input contract
+
+- `EDX` contains the simulator VM address of a null-terminated byte string.
+- `EDX` is not a host pointer, browser pointer, Wasm pointer, Windows virtual address, PE RVA, file offset, or external-library pointer.
+- The routine reads bytes from simulated memory only through checked VM memory helpers.
+- The routine does not read source text, host files, browser strings, imported libraries, PE sections, or real Irvine32 runtime data.
+
+### Runtime scan limit
+
+Define a named implementation constant:
+
+```c
+VM_IRVINE32_WRITESTRING_SCAN_LIMIT_BYTES
+```
+
+The browser/default value is `1048576` bytes. This is a simulator safety cap, not an Irvine32 semantic guarantee.
+
+Tests may use a smaller test-only scan limit only through an explicit test configuration path. The test-only override must be unavailable to normal browser execution unless a later accepted phase deliberately documents user-facing configurability.
+
+A string is considered unterminated for `WriteString` when the routine scans exactly `VM_IRVINE32_WRITESTRING_SCAN_LIMIT_BYTES` bytes without reading a `00h` terminator. A terminator read before the limit is reached succeeds. A terminator that would require reading byte index `VM_IRVINE32_WRITESTRING_SCAN_LIMIT_BYTES` is too late and must not be read as part of successful output.
+
+### Runtime validation and output commit behavior
+
+`WriteString` uses no-partial-output behavior for the failing call. The implementation must validate all fatal conditions required by this phase before committing candidate bytes from that call to Program Console.
+
+Required behavior:
+
+- Scan one byte at a time from the simulated-memory address in `EDX`.
+- Use checked VM memory helpers for each byte read.
+- Run mandatory Level 1 memory safety checks before consuming each byte.
+- Run active optional memory/teaching policies according to their documented default, warning, strict, or explicit-off settings.
+- Stop successfully at the first `00h` byte.
+- Do not print the `00h` terminator.
+- Convert each validated nonzero byte to Program Console text according to the existing Program Console byte policy.
+- Preserve previous Program Console output that was committed before the failing `WriteString` call.
+- Do not append any candidate bytes from the failing `WriteString` call if a fatal diagnostic occurs.
+- Do not write simulated memory.
+- Do not create memory-change rows.
+
+The implementation may internally buffer candidate string bytes until validation succeeds. It must not expose partially buffered candidate bytes through source-run JSON, Program Console DOM rendering, diagnostics, memory-change rows, or any other public output surface after a fatal failure.
+
+### Register, flag, and metadata preservation
+
+On success and on every fatal failure, `WriteString` must preserve:
+
+- all modeled general-purpose registers, including `EDX`;
+- modeled flags;
+- flag-validity metadata;
+- simulated memory contents;
+- memory-change rows, because the routine does not write memory.
+
+### Runtime diagnostic precedence
+
+After source-form diagnostics have passed, `WriteString` selects diagnostics in this order for the next byte or append under consideration:
+
+1. Address arithmetic overflow or mandatory checked-memory read failure for the next byte to be read.
+2. Strict `uninitialized-read` failure for the next byte before that byte contributes to candidate output.
+3. `console-output-limit-exceeded` if committing the validated candidate output for this call would exceed the configured Program Console byte or line limit.
+4. `string-scan-limit-exceeded` if `VM_IRVINE32_WRITESTRING_SCAN_LIMIT_BYTES` bytes are scanned without reading `00h`.
+5. Non-fatal `uninitialized-read` warnings collected under warning mode.
+
+If the existing diagnostic compatibility layer still exposes `unterminated-string-output`, Phase 89 must document and test whether it is an alias, legacy compatibility code, or replacement. The preferred new code for the scan cap is `string-scan-limit-exceeded`.
+
+A fatal runtime diagnostic must:
+
+- append no candidate Program Console output from the failing `WriteString` call;
+- preserve all modeled registers;
+- preserve modeled flags and flag-validity metadata;
+- preserve simulated memory;
+- create no memory-change rows;
+- emit no `execution-complete` message;
+- render through Simulator Messages, not Program Console.
+
+### Warning-plus-fatal interaction for this call
+
+`WriteString` uses no-partial-output behavior for the failing call. That no-partial rule also controls non-fatal uninitialized-read warnings discovered while validating candidate bytes for the same call.
+
+Required behavior:
+
+- During one `WriteString` call, warnings for candidate bytes must be collected in call-local pending state until the call either succeeds or fails fatally.
+- If the call succeeds in default uninitialized-read warning mode, emit the pending non-fatal `uninitialized-read` warnings through Simulator Messages and append the validated Program Console string.
+- If the call fails fatally, discard pending non-fatal `uninitialized-read` warnings collected only for candidate bytes of that same failing call.
+- Preserve warnings from earlier completed instructions or earlier completed Irvine32 calls.
+- Do not emit a pending warning from a failing no-partial-output call before the call's fatal/nonfatal outcome is known.
+- Do not use a warning collected for a failing no-partial-output call as a substitute for the fatal diagnostic. The fatal diagnostic remains the terminal reason for the failed call.
+- Explicit uninitialized-read off suppresses only the uninitialized-read teaching warning. It does not suppress fatal invalid-memory, scan-limit, output-limit, strict uninitialized-read, `.CONST`, region, permission, object-bounds, or unrelated diagnostics.
+
+Examples:
+
+- A `.DATA?` string that contains a `00h` terminator before any fatal condition succeeds, emits the default `uninitialized-read` warning, and appends the deterministic visible bytes before the terminator.
+- A `.DATA?` string that would warn for candidate bytes but then exceeds the configured Program Console output limit emits `console-output-limit-exceeded`, appends no candidate bytes from the failed call, suppresses the candidate-byte uninitialized warnings from that failed call, and omits `execution-complete`.
+- A `.DATA?` string that would warn for candidate bytes but then reaches the scan limit emits `string-scan-limit-exceeded`, appends no candidate bytes from the failed call, suppresses the candidate-byte uninitialized warnings from that failed call, and omits `execution-complete`.
+- A program that emitted a warning before `call WriteString` keeps that earlier warning even if the later `WriteString` call fails fatally.
+
+### Diagnostic source locations
+
+Source-form diagnostics must point at the `WriteString` token when that token is present. Runtime diagnostics caused by executing `call WriteString` must point at the call instruction as precisely as the current diagnostic infrastructure supports.
+
+Structured diagnostics and rendered Simulator Messages tests must verify category/severity, code, primary message, line, column, byte offset, and span length where source location is known.
 
 ### Tests
 
-Source-run acceptance program:
+Phase 89 is not complete until every required behavior below has focused tests. Use existing test harness group names where possible, but the behavior coverage is mandatory even if filenames or group labels differ.
 
-```asm
-.data
-msg BYTE "Hello", 0
-.code
-main PROC
-    mov edx, OFFSET msg
-    call WriteString
-    exit
-main ENDP
-END main
-```
+Required source-form and parser tests:
 
-Expected Program Console:
+- `CALL WriteString` after `INCLUDE Irvine32.inc` is accepted.
+- `CALL writestring` and mixed-case routine spelling are accepted after include even under `OPTION CASEMAP:NONE`.
+- `CALL WriteString` before `INCLUDE Irvine32.inc` reports `assembly-error missing-irvine32-include` with the exact documented primary message.
+- Bare `WriteString` after `INCLUDE Irvine32.inc` reports `assembly-error invalid-irvine32-call-form` with the exact documented primary message.
+- `INVOKE WriteString` after `INCLUDE Irvine32.inc` remains deferred with `unsupported-irvine-invoke`.
+- `INVOKE WriteChar` remains deferred with `unsupported-irvine-invoke`.
+- Numeric Irvine32 output routines remain deferred unless their later phases are explicitly implemented.
+
+Required successful runtime tests:
+
+- Empty initialized string prints nothing and still completes successfully.
+- Initialized `.data` string prints expected bytes and emits no `uninitialized-read` diagnostic.
+- Initialized `.CONST` string prints expected bytes and emits no `uninitialized-read` diagnostic.
+- String containing an embedded `00h` terminator prints only bytes before the first terminator.
+- String with a terminator at scan-limit-minus-one succeeds when using a test-only scan limit.
+- Previous Program Console output remains intact and successful `WriteString` output appends after it exactly.
+- Successful execution preserves all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
+
+Required fatal runtime tests:
+
+- Invalid `EDX` fails with `invalid-memory-read`, emits no candidate Program Console output for the failed call, and omits `execution-complete`.
+- A string that starts in readable memory but crosses into unreadable memory fails with `invalid-memory-read`, emits no candidate Program Console output for the failed call, and omits `execution-complete`.
+- Missing null terminator before the configured scan cap fails with `string-scan-limit-exceeded` and compatibility alias `unterminated-string-output` if the compatibility layer still requires that alias.
+- Output byte-limit failure appends no candidate string bytes from the failed call.
+- Output line-limit failure appends no candidate string bytes from the failed call.
+- Strict uninitialized-read mode fails before appending candidate Program Console output from the failed call.
+- Every fatal failure preserves all modeled registers, modeled flags, flag-validity metadata, simulated memory, memory-change rows, and previously committed Program Console output.
+
+Required scan-limit boundary tests:
+
+- A test-only scan limit of `N` succeeds when byte index `N - 1` is `00h`.
+- A test-only scan limit of `N` fails when bytes `0` through `N - 1` are nonzero.
+- A terminator that would require reading byte index `N` is not accepted as successful termination.
+- Scan-limit failure emits the documented scan-limit diagnostic and includes the configured limit in structured or rendered diagnostic details where supported.
+
+Required uninitialized-origin tests:
+
+- `.DATA?` with zero first byte prints nothing and emits default `uninitialized-read` warning unless uninitialized-read diagnostics are explicitly off.
+- `.DATA?` with nonzero deterministic bytes created by prior simulated writes prints those bytes and emits no `uninitialized-read` warning for overwritten bytes.
+- `BYTE ?` and `DUP(?)` storage that still carries uninitialized-origin metadata emit default `uninitialized-read` warning and continue in warning mode unless another fatal diagnostic occurs.
+- Explicit uninitialized-read off suppresses only the `uninitialized-read` warning and does not suppress invalid-memory, scan-limit, output-limit, or unrelated diagnostics.
+- Strict uninitialized-read mode emits fatal `uninitialized-read`, appends no candidate Program Console output from the failed call, and omits `execution-complete`.
+
+Required rendered Simulator Messages tests:
+
+- Missing include for `CALL WriteString` renders as `assembly-error missing-irvine32-include` with source line, column, byte offset, and span for `WriteString`.
+- Bare `WriteString` renders as `assembly-error invalid-irvine32-call-form` with source line, column, byte offset, and span for `WriteString`.
+- Continued `INVOKE WriteString` deferral renders as `unsupported-feature unsupported-irvine-invoke` with source line, column, byte offset, and span for `WriteString`.
+- Invalid memory read renders as `runtime-error invalid-memory-read` and points to `call WriteString`.
+- Scan-limit failure renders as `runtime-error string-scan-limit-exceeded` and includes the configured scan limit where supported.
+- Output-limit failure renders as `resource-limit-error console-output-limit-exceeded` and identifies byte-limit or line-limit as appropriate.
+- Default uninitialized-origin warning renders as `warning uninitialized-read` and identifies the read range or byte position as precisely as the diagnostic infrastructure supports.
+- Strict uninitialized-origin failure renders as `runtime-error uninitialized-read` and no `execution-complete` message follows.
+
+Required protocol, metadata, and documentation tests:
+
+- `web/src/protocol.js` advances implemented runtime/source-run behavior metadata to Phase 89.
+- The source-run output contract token becomes `phase-89-irvine32-writestring-contract-v1`.
+- Protocol tests verify the new token.
+- Static documentation checks verify `README.md`, `docs/FULL_IMPLEMENTATION_SPEC.md`, `docs/SUPPORTED_SYNTAX.md`, `docs/TESTING_GUIDE.md`, `web/index.html`, and active status text agree on Phase 89 after the implementation phase completes.
+- Static documentation checks verify that the full spec's deferred-diagnostic table no longer lists direct `CALL WriteString` as deferred after Phase 89.
+- Static documentation checks verify that `INVOKE WriteString` remains documented as deferred unless a later accepted phase explicitly implements that exact source form.
+- Static documentation checks reject active wording that says current public MASM source supports only `Crlf` after Phase 88 or only `Crlf`/`WriteChar` after Phase 89.
+- Static documentation checks reject active wording that groups WinAPI execution, PE loading/linking, host callbacks, host filesystem access, external libraries, native process behavior, Windows process emulation, or full x86 emulation with ordinary future Irvine32 routine work.
+- Browser rendered-message tests verify that Program Console and Simulator Messages remain separate for `WriteString` success, warnings, and fatal failures.
+- If `web/index.html`, the current milestone banner, the default editor program, source-run syntax support, source-run behavior metadata, source-run output-contract token, Irvine32 virtual includes, Program Console behavior, Simulator Messages behavior, or `exit` behavior is changed during Phase 89, the default-editor source-run smoke test required by `docs/TESTING_GUIDE.md` must be run and must pass.
+
+Phase 89 is complete only when all of the following are true:
+
+- direct `CALL WriteString` after `INCLUDE Irvine32.inc` is executable for valid null-terminated strings;
+- invalid source forms produce the exact documented assembly diagnostics;
+- `CALL WriteString` without `INCLUDE Irvine32.inc` reports `assembly-error missing-irvine32-include`;
+- bare `WriteString` after `INCLUDE Irvine32.inc` reports `assembly-error invalid-irvine32-call-form`;
+- `INVOKE WriteString` remains deferred with `unsupported-irvine-invoke` unless a later accepted phase explicitly implements it;
+- all simulated-memory reads go through checked VM memory helpers;
+- `EDX` is treated only as a simulator VM address;
+- the named `VM_IRVINE32_WRITESTRING_SCAN_LIMIT_BYTES` default and test-only override path are implemented exactly as documented;
+- scan-limit boundary behavior is tested at `N - 1`, `N`, and the byte index that would require reading beyond `N`;
+- `.CONST` reads succeed and `.CONST` write protection remains unchanged;
+- default uninitialized-origin warning behavior follows Phase 53C on successful calls;
+- candidate-byte uninitialized warnings are buffered per call and emitted only if that `WriteString` call succeeds;
+- non-fatal candidate-byte warnings from a failing no-partial-output `WriteString` call are suppressed as documented by the warning-plus-fatal interaction rule;
+- warnings emitted before the failing `WriteString` call are preserved;
+- strict uninitialized-origin mode stops before Program Console output from the failing call;
+- fatal runtime failures append no candidate Program Console output from the failing call;
+- Program Console and Simulator Messages remain separate streams;
+- all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows are preserved;
+- source-run metadata, protocol tests, supported-syntax documentation, full-spec deferred-diagnostic table, README current status, `web/index.html`, testing guide, and stale-artifact checks agree on Phase 89;
+- the source-run output contract token is exactly `phase-89-irvine32-writestring-contract-v1`;
+- default-editor source-run smoke coverage is run if Phase 89 changes any file or behavior that triggers the `docs/TESTING_GUIDE.md` default-editor smoke rule;
+- no WinAPI, PE/linker, external library, host filesystem, host callback, native process, Windows process, full x86, macro, numeric output, input, debug, random, file-routine, or unimplemented Irvine32 behavior is made executable.
+
+## 93A. Phase 89A - Irvine32 Active Documentation and Static Status Guardrails
+
+### Intent
+
+Phase 89A is an optional non-renumbering corrective phase. Use it only if the static documentation guardrails described in Phase 89 are not implemented during Phase 89 itself.
+
+This phase does not add new MASM syntax, VM instructions, Irvine32 routines, output behavior, memory behavior, or browser UI features. It exists only to harden active documentation/status checks after the Irvine32 output routine milestones.
+
+### Sequencing rule
+
+After Phase 89 is implemented, run the Phase 89A checklist before starting Phase 90.
+
+- If every Phase 89A requirement is already satisfied by Phase 89, do not implement a redundant milestone. Record in the Phase 89 report that Phase 89A was reviewed and was not needed because Phase 89 completed the guardrails.
+- If any Phase 89A requirement is missing after Phase 89, complete Phase 89A before Phase 90.
+- Phase 89A must not renumber Phase 90 or any later phase.
+- Phase 89A must not add or change MASM syntax, VM instructions, Irvine32 executable routines, Program Console behavior, memory behavior, source-run schema, browser UI behavior, or Wasm API behavior except for static documentation/status validation.
+
+The Phase 89 milestone report must include exactly one Phase 89A disposition line using one of these values:
 
 ```text
-Hello
+Phase 89A disposition: satisfied during Phase 89
+Phase 89A disposition: completed as separate corrective Phase 89A
+Phase 89A disposition: still required before Phase 90
 ```
 
-Additional tests:
+The third value is allowed only for an incomplete handoff. A completed Phase 89 handoff should use the first value if all guardrails were completed in Phase 89, or the second value after a separate Phase 89A corrective milestone is completed.
 
-- Empty string prints nothing.
-- Missing null terminator fails with `string-scan-limit-exceeded` / `unterminated-string-output` before unbounded scan.
-- Invalid `EDX` fails with runtime diagnostic and no partial Program Console output.
-- String in `.CONST` reads successfully.
-- String in initialized `.data` reads successfully without `uninitialized-read`.
-- String in `.DATA?` with zero first byte prints nothing, emits default `uninitialized-read` warning unless uninitialized-read diagnostics are explicitly off, and emits no warning when the byte has been initialized by a prior write.
-- String in `.DATA?` with explicit uninitialized-read off prints according to deterministic zero-filled bytes and emits no `uninitialized-read` warning.
-- String in `.DATA?` with strict uninitialized-read mode stops before appending Program Console output.
-- Program Console and Simulator Messages remain separated.
+### Requirements
 
-Rendered Simulator Messages tests:
+- Add static checks that inspect active status surfaces and exclude historical milestone reports.
+- Active status surfaces include `README.md`, `docs/SUPPORTED_SYNTAX.md`, `docs/TESTING_GUIDE.md`, `docs/MILESTONE_HISTORY.md`, `web/index.html`, and `web/src/protocol.js` where applicable.
+- After Phase 88, active documentation must not say that current public MASM source supports virtual Irvine32 `Crlf` only.
+- After Phase 88, active documentation must name direct virtual Irvine32 `WriteChar` as implemented after `INCLUDE Irvine32.inc`.
+- After Phase 89, active documentation must not say that current public MASM source supports only `Crlf` and `WriteChar`.
+- After Phase 89, active documentation must name direct virtual Irvine32 `WriteString` as implemented after `INCLUDE Irvine32.inc`.
+- Active documentation must not describe WinAPI execution, PE loading/linking, host callbacks, host filesystem access, external libraries, native process behavior, or full x86 emulation as ordinary future roadmap work.
+- Historical reports may retain wording that accurately described the project state at the time of those reports.
 
-- Invalid address diagnostics point to `call WriteString` and include the `EDX` address.
-- Unterminated string diagnostics point to `call WriteString` and include the `EDX` address and scan limit.
-- Default uninitialized-origin string warning renders as `simulator-warning uninitialized-read` and execution can still complete.
-- Strict uninitialized-origin string failure renders as `runtime-error uninitialized-read` and no `execution-complete` message follows.
+### Static documentation guardrails after Phase 89
 
----
+Static documentation checks after Phase 89 must reject active source-of-truth text that still describes direct `CALL WriteString` after `INCLUDE Irvine32.inc` as `unsupported-irvine32-routine`, deferred, future-owned, or unimplemented.
+
+Allowed after Phase 89:
+
+- `INVOKE WriteString` remains `unsupported-irvine-invoke`;
+- `CALL WriteString` without `INCLUDE Irvine32.inc` is `assembly-error missing-irvine32-include`;
+- bare `WriteString` after include is `assembly-error invalid-irvine32-call-form`;
+- numeric Irvine32 output routines remain deferred until their own phases;
+- WinAPI, PE/linker, host filesystem, host callbacks, native process behavior, Windows process behavior, and full x86 emulation remain non-goals or unsupported boundaries.
+
+Rejected after Phase 89:
+
+- active docs saying current public MASM source supports only `Crlf` and `WriteChar`;
+- active docs listing direct `CALL WriteString` in the generic unsupported Irvine32 direct-call row;
+- active docs implying `INVOKE WriteString` is implemented by direct `CALL WriteString`;
+- active docs treating host, Windows, PE, linker, or full-x86 behavior as ordinary future Irvine32 routine work.
+
+Active documentation must not describe any of these product non-goals as ordinary future Irvine32 routine roadmap work:
+
+- WinAPI execution;
+- PE loading;
+- PE linking;
+- import-library linking;
+- host callbacks;
+- host filesystem access;
+- external native libraries;
+- native process behavior;
+- Windows process emulation;
+- full x86 emulation.
+
+Allowed wording may say that these behaviors are unsupported, out of scope, non-goals, or deliberately excluded. Allowed wording may also say that an explicitly reviewed later phase would be required to change the product boundary. Active wording must not imply that these behaviors are automatically coming after current Irvine32 routine phases.
+
+### Future Irvine32 output-contract token drift checks
+
+For each future Irvine32 output routine milestone, static checks should verify that the active implemented phase number and source-run output-contract token agree with the routine implemented in that milestone.
+
+Expected token names unless a later accepted guide revision deliberately changes them:
+
+- Phase 89: `phase-89-irvine32-writestring-contract-v1`
+- Phase 90: `phase-90-irvine32-writedec-contract-v1`
+- Phase 91: `phase-91-irvine32-writeint-contract-v1`
+- Phase 92: `phase-92-irvine32-writehex-contract-v1`
+- Phase 93: `phase-93-irvine32-writebin-contract-v1`
+- Phase 94: `phase-94-irvine32-dumpregs-contract-v1`
+- Phase 95: `phase-95-irvine32-dumpmem-contract-v1`
+
+### Tests
+
+- Static fixture: active doc containing Phase 87-only `Crlf` current-support wording after Phase 88 must fail.
+- Static fixture: historical report containing old Phase 87 wording must pass.
+- Static fixture: active doc omitting `WriteString` from current support after Phase 89 must fail.
+- Static fixture: active doc grouping WinAPI/PE/host filesystem/full x86 with ordinary future Irvine32 routine work must fail.
+- Static fixture: active doc that separates future Irvine32 routine work from permanent non-goals must pass.
+
+### Acceptance criteria
+
+Phase 89A is complete only when static checks prevent stale active Irvine32 support wording and non-goal drift without requiring historical milestone reports to be rewritten.
+
+### Irvine32 output routine phase template
+
+Before implementing each future Irvine32 output routine phase, the phase must define or inherit all of the following. A future assistant must not implement a routine merely because its name appears in the Irvine32 registry or because another Irvine32 output routine has already been implemented.
+
+A phase may satisfy this template in either of two ways:
+
+1. The phase may explicitly list every required contract item in its own text.
+2. The phase may explicitly state that it inherits this template and then provide the routine-specific values for every placeholder or decision point.
+
+A phase is not implementation-ready if it merely names a routine and gives formatting examples. The phase must state the exact accepted source forms, diagnostics, preservation rules, output-commit behavior, source-run output-contract token, metadata/status updates, active-documentation updates, and tests before implementation begins.
+
+Required source-form contract:
+
+- accepted executable source forms;
+- required `INCLUDE Irvine32.inc` behavior;
+- case-insensitive Irvine32 routine-name matching under `OPTION CASEMAP:NONE`;
+- invalid source-form diagnostics, including category, code, and exact primary message;
+- continued deferral tests for sibling Irvine32 routines and unimplemented `INVOKE` forms.
+
+Required runtime contract:
+
+- input registers or operands;
+- register mutation or preservation behavior;
+- modeled flag and flag-validity metadata mutation or preservation behavior;
+- simulated-memory read behavior;
+- simulated-memory write behavior;
+- Program Console output behavior;
+- Simulator Messages behavior;
+- output-limit behavior;
+- no-partial-output behavior, if applicable;
+- deterministic formatting details, including width, sign, base, prefixes, suffixes, letter case, spacing, newline behavior, and truncation behavior where applicable.
+
+Required diagnostic contract:
+
+- structured diagnostic category and code for every new source-form or runtime failure;
+- diagnostic precedence when more than one failure can apply;
+- source line, source column, byte offset, and span length requirements where source location is known;
+- rendered Simulator Messages tests for every UI-visible diagnostic path.
+
+Required boundary contract:
+
+- explicit statement that the phase does not implement unrelated Irvine32 routines;
+- explicit statement that the phase does not implement WinAPI execution, PE loading/linking, import libraries, external libraries, host callbacks, host filesystem access, full MASM macro behavior, full x86 emulation, or Windows process behavior;
+- regression tests for at least the nearest sibling deferred forms that a future assistant might accidentally enable.
+
+Required status and metadata contract:
+
+- source-run metadata update if accepted source syntax, parser behavior, VM behavior, executor behavior, diagnostics, or public runtime behavior changes;
+- output-contract token update when source-run JSON or output-stream contract changes;
+- README current-status update;
+- `web/index.html` current milestone update;
+- `docs/SUPPORTED_SYNTAX.md` update;
+- `docs/TESTING_GUIDE.md` update;
+- static stale-artifact checks where feasible.
 
 ## 94. Phase 90 - Irvine32 WriteDec
 
@@ -25758,17 +26091,77 @@ Rendered Simulator Messages tests:
 
 Implement virtual Irvine32 `WriteDec` as unsigned decimal formatting of `EAX`.
 
+This phase inherits the Irvine32 output routine phase template above. The milestone is incomplete until every template item is satisfied for `WriteDec`.
+
+### Accepted syntax and source-form diagnostics
+
+Accepted executable source form after `INCLUDE Irvine32.inc`:
+
+```asm
+call WriteDec
+```
+
+The Irvine32 routine name is matched case-insensitively even when `OPTION CASEMAP:NONE` is active.
+
+`CALL WriteDec` before `INCLUDE Irvine32.inc` must be an `assembly-error` with code `missing-irvine32-include` and this primary message:
+
+```text
+CALL WriteDec requires INCLUDE Irvine32.inc before WriteDec can be used as a virtual Irvine32 routine.
+```
+
+Bare `WriteDec` after `INCLUDE Irvine32.inc` must be an `assembly-error` with code `invalid-irvine32-call-form` and this primary message:
+
+```text
+WriteDec is a virtual Irvine32 routine and must be called with CALL WriteDec.
+```
+
+`INVOKE WriteDec` remains future-owned Irvine32 `INVOKE` routine dispatch and must report `unsupported-irvine-invoke` unless a later accepted phase explicitly implements that exact source form.
+
 ### Runtime contract
 
-- Format `EAX` as an unsigned 32-bit decimal value.
-- Preserve registers and flags.
-- Preflight output length and append no partial digits on output-limit failure.
+- Interpret `EAX` as an unsigned 32-bit integer.
+- Format values in the inclusive range `0` through `4294967295`.
+- Append the shortest decimal representation with no leading zeroes except the single digit `0` for zero.
+- Append no leading plus sign, grouping separator, whitespace, CR, LF, prefix, or suffix.
+- Preflight the full formatted value against Program Console byte and line limits before committing output.
+- On output-limit failure, append no partial digits from the failing call.
+- Preserve all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
+- Write no simulated memory.
+- Write program output only to Program Console.
+- Write no Simulator Messages on success except non-program-output diagnostics required by active policy.
+
+### Protocol, documentation, and status updates
+
+- Advance implemented runtime/source-run behavior metadata to Phase 90.
+- Set the source-run output-contract token to `phase-90-irvine32-writedec-contract-v1`.
+- Update `README.md`, `docs/SUPPORTED_SYNTAX.md`, `docs/TESTING_GUIDE.md`, `docs/FULL_IMPLEMENTATION_SPEC.md` when needed, `web/index.html`, and stale-artifact checks so active status text agrees on Phase 90.
+- Keep unimplemented sibling Irvine32 routines and unimplemented `INVOKE` forms documented as deferred.
 
 ### Required tests
 
-- `0`, `1`, and `4294967295`.
-- Output-limit failure before and at boundary.
-- No Program Console mutation on failure.
+Source-form and parser tests:
+
+- `CALL WriteDec` after `INCLUDE Irvine32.inc` is accepted.
+- Mixed-case `CALL writedec` is accepted after include under `OPTION CASEMAP:NONE`.
+- `CALL WriteDec` before include reports `missing-irvine32-include` with the exact primary message documented above.
+- Bare `WriteDec` after include reports `invalid-irvine32-call-form` with the exact primary message documented above.
+- `INVOKE WriteDec` remains deferred with `unsupported-irvine-invoke`.
+
+Runtime and output tests:
+
+- `EAX = 0` prints `0`.
+- `EAX = 1` prints `1`.
+- `EAX = 10` prints `10`.
+- `EAX = 4294967295` prints `4294967295`.
+- Output byte-limit failure before the first digit appends no digits.
+- Output byte-limit failure at the boundary succeeds when the complete value fits exactly.
+- Output line-limit behavior is unchanged because this routine emits no line-feed bytes.
+- Success preserves all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
+- Failure preserves all modeled registers, modeled flags, flag-validity metadata, simulated memory, memory-change rows, and previously committed Program Console output.
+
+Boundary tests:
+
+- `WriteInt`, `WriteHex`, `WriteBin`, `WriteString INVOKE`, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, Windows process behavior, and full x86 behavior remain unsupported or deferred as documented.
 
 ## 95. Phase 91 - Irvine32 WriteInt
 
@@ -25776,18 +26169,81 @@ Implement virtual Irvine32 `WriteDec` as unsigned decimal formatting of `EAX`.
 
 Implement virtual Irvine32 `WriteInt` as signed decimal formatting of `EAX`.
 
+This phase inherits the Irvine32 output routine phase template above. The milestone is incomplete until every template item is satisfied for `WriteInt`.
+
+### Accepted syntax and source-form diagnostics
+
+Accepted executable source form after `INCLUDE Irvine32.inc`:
+
+```asm
+call WriteInt
+```
+
+The Irvine32 routine name is matched case-insensitively even when `OPTION CASEMAP:NONE` is active.
+
+`CALL WriteInt` before `INCLUDE Irvine32.inc` must be an `assembly-error` with code `missing-irvine32-include` and this primary message:
+
+```text
+CALL WriteInt requires INCLUDE Irvine32.inc before WriteInt can be used as a virtual Irvine32 routine.
+```
+
+Bare `WriteInt` after `INCLUDE Irvine32.inc` must be an `assembly-error` with code `invalid-irvine32-call-form` and this primary message:
+
+```text
+WriteInt is a virtual Irvine32 routine and must be called with CALL WriteInt.
+```
+
+`INVOKE WriteInt` remains future-owned Irvine32 `INVOKE` routine dispatch and must report `unsupported-irvine-invoke` unless a later accepted phase explicitly implements that exact source form.
+
 ### Runtime contract
 
-- Interpret `EAX` as signed 32-bit two's-complement.
-- Emit a leading minus sign for negative values.
-- Preserve registers and flags.
-- Preflight output length and append no partial digits on output-limit failure.
+- Interpret `EAX` as a signed 32-bit two's-complement integer.
+- Format values in the inclusive range `-2147483648` through `2147483647`.
+- Emit a single leading minus sign for negative values.
+- Emit no leading plus sign for zero or positive values.
+- Emit the shortest decimal digit sequence with no leading zeroes except the single digit `0` for zero.
+- Append no grouping separator, whitespace, CR, LF, prefix, or suffix.
+- Preflight the full formatted value, including the minus sign when present, against Program Console byte and line limits before committing output.
+- On output-limit failure, append no partial sign or digits from the failing call.
+- Preserve all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
+- Write no simulated memory.
+- Write program output only to Program Console.
+- Write no Simulator Messages on success except non-program-output diagnostics required by active policy.
+
+### Protocol, documentation, and status updates
+
+- Advance implemented runtime/source-run behavior metadata to Phase 91.
+- Set the source-run output-contract token to `phase-91-irvine32-writeint-contract-v1`.
+- Update `README.md`, `docs/SUPPORTED_SYNTAX.md`, `docs/TESTING_GUIDE.md`, `docs/FULL_IMPLEMENTATION_SPEC.md` when needed, `web/index.html`, and stale-artifact checks so active status text agrees on Phase 91.
+- Keep unimplemented sibling Irvine32 routines and unimplemented `INVOKE` forms documented as deferred.
 
 ### Required tests
 
-- `0`, `1`, `-1`, `2147483647`, and `-2147483648`.
-- Output-limit failure before sign, after sign, and at boundary.
-- No Program Console mutation on failure.
+Source-form and parser tests:
+
+- `CALL WriteInt` after `INCLUDE Irvine32.inc` is accepted.
+- Mixed-case `CALL writeint` is accepted after include under `OPTION CASEMAP:NONE`.
+- `CALL WriteInt` before include reports `missing-irvine32-include` with the exact primary message documented above.
+- Bare `WriteInt` after include reports `invalid-irvine32-call-form` with the exact primary message documented above.
+- `INVOKE WriteInt` remains deferred with `unsupported-irvine-invoke`.
+
+Runtime and output tests:
+
+- `EAX = 0` prints `0`.
+- `EAX = 1` prints `1`.
+- `EAX = FFFFFFFFh` prints `-1`.
+- `EAX = 7FFFFFFFh` prints `2147483647`.
+- `EAX = 80000000h` prints `-2147483648`.
+- Output byte-limit failure before the sign appends no sign or digits.
+- Output byte-limit failure after the sign would fit but the full value would not fit appends no sign or digits.
+- Output byte-limit boundary succeeds when the complete value fits exactly.
+- Output line-limit behavior is unchanged because this routine emits no line-feed bytes.
+- Success preserves all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
+- Failure preserves all modeled registers, modeled flags, flag-validity metadata, simulated memory, memory-change rows, and previously committed Program Console output.
+
+Boundary tests:
+
+- `WriteDec`, `WriteHex`, `WriteBin`, `WriteString INVOKE`, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, Windows process behavior, and full x86 behavior remain unsupported or deferred as documented.
 
 ## 96. Phase 92 - Irvine32 WriteHex
 
@@ -25795,17 +26251,79 @@ Implement virtual Irvine32 `WriteInt` as signed decimal formatting of `EAX`.
 
 Implement virtual Irvine32 `WriteHex` as fixed-width hexadecimal formatting of `EAX`.
 
+This phase inherits the Irvine32 output routine phase template above. The milestone is incomplete until every template item is satisfied for `WriteHex`.
+
+### Accepted syntax and source-form diagnostics
+
+Accepted executable source form after `INCLUDE Irvine32.inc`:
+
+```asm
+call WriteHex
+```
+
+The Irvine32 routine name is matched case-insensitively even when `OPTION CASEMAP:NONE` is active.
+
+`CALL WriteHex` before `INCLUDE Irvine32.inc` must be an `assembly-error` with code `missing-irvine32-include` and this primary message:
+
+```text
+CALL WriteHex requires INCLUDE Irvine32.inc before WriteHex can be used as a virtual Irvine32 routine.
+```
+
+Bare `WriteHex` after `INCLUDE Irvine32.inc` must be an `assembly-error` with code `invalid-irvine32-call-form` and this primary message:
+
+```text
+WriteHex is a virtual Irvine32 routine and must be called with CALL WriteHex.
+```
+
+`INVOKE WriteHex` remains future-owned Irvine32 `INVOKE` routine dispatch and must report `unsupported-irvine-invoke` unless a later accepted phase explicitly implements that exact source form.
+
 ### Runtime contract
 
-- Use `EAX` as an unsigned 32-bit value.
-- Emit exactly eight uppercase hexadecimal digits with no prefix or suffix in v1.
-- Preserve registers and flags.
-- Preflight output length and append no partial digits on output-limit failure.
+- Interpret `EAX` as an unsigned 32-bit value.
+- Emit exactly eight uppercase hexadecimal digits.
+- Use digits `0` through `9` and `A` through `F` only.
+- Emit leading zeroes as needed to reach eight digits.
+- Append no `0x` prefix, `h` suffix, grouping separator, whitespace, CR, LF, prefix, or suffix.
+- Preflight the full 8-byte formatted value against Program Console byte and line limits before committing output.
+- On output-limit failure, append no partial digits from the failing call.
+- Preserve all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
+- Write no simulated memory.
+- Write program output only to Program Console.
+- Write no Simulator Messages on success except non-program-output diagnostics required by active policy.
+
+### Protocol, documentation, and status updates
+
+- Advance implemented runtime/source-run behavior metadata to Phase 92.
+- Set the source-run output-contract token to `phase-92-irvine32-writehex-contract-v1`.
+- Update `README.md`, `docs/SUPPORTED_SYNTAX.md`, `docs/TESTING_GUIDE.md`, `docs/FULL_IMPLEMENTATION_SPEC.md` when needed, `web/index.html`, and stale-artifact checks so active status text agrees on Phase 92.
+- Keep unimplemented sibling Irvine32 routines and unimplemented `INVOKE` forms documented as deferred.
 
 ### Required tests
 
-- `00000000`, `00000001`, `0000000A`, `7FFFFFFF`, and `FFFFFFFF`.
-- Output-limit failure appends no partial formatted value.
+Source-form and parser tests:
+
+- `CALL WriteHex` after `INCLUDE Irvine32.inc` is accepted.
+- Mixed-case `CALL writehex` is accepted after include under `OPTION CASEMAP:NONE`.
+- `CALL WriteHex` before include reports `missing-irvine32-include` with the exact primary message documented above.
+- Bare `WriteHex` after include reports `invalid-irvine32-call-form` with the exact primary message documented above.
+- `INVOKE WriteHex` remains deferred with `unsupported-irvine-invoke`.
+
+Runtime and output tests:
+
+- `EAX = 00000000h` prints `00000000`.
+- `EAX = 00000001h` prints `00000001`.
+- `EAX = 0000000Ah` prints `0000000A`.
+- `EAX = 7FFFFFFFh` prints `7FFFFFFF`.
+- `EAX = FFFFFFFFh` prints `FFFFFFFF`.
+- Output byte-limit failure appends no partial formatted value.
+- Output byte-limit boundary succeeds when exactly eight bytes fit.
+- Output line-limit behavior is unchanged because this routine emits no line-feed bytes.
+- Success preserves all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
+- Failure preserves all modeled registers, modeled flags, flag-validity metadata, simulated memory, memory-change rows, and previously committed Program Console output.
+
+Boundary tests:
+
+- `WriteDec`, `WriteInt`, `WriteBin`, `WriteString INVOKE`, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, Windows process behavior, and full x86 behavior remain unsupported or deferred as documented.
 
 ## 97. Phase 93 - Irvine32 WriteBin
 
@@ -25813,17 +26331,81 @@ Implement virtual Irvine32 `WriteHex` as fixed-width hexadecimal formatting of `
 
 Implement virtual Irvine32 `WriteBin` as fixed-width binary formatting of `EAX`.
 
+This phase inherits the Irvine32 output routine phase template above. The milestone is incomplete until every template item is satisfied for `WriteBin`.
+
+### Accepted syntax and source-form diagnostics
+
+Accepted executable source form after `INCLUDE Irvine32.inc`:
+
+```asm
+call WriteBin
+```
+
+The Irvine32 routine name is matched case-insensitively even when `OPTION CASEMAP:NONE` is active.
+
+`CALL WriteBin` before `INCLUDE Irvine32.inc` must be an `assembly-error` with code `missing-irvine32-include` and this primary message:
+
+```text
+CALL WriteBin requires INCLUDE Irvine32.inc before WriteBin can be used as a virtual Irvine32 routine.
+```
+
+Bare `WriteBin` after `INCLUDE Irvine32.inc` must be an `assembly-error` with code `invalid-irvine32-call-form` and this primary message:
+
+```text
+WriteBin is a virtual Irvine32 routine and must be called with CALL WriteBin.
+```
+
+`INVOKE WriteBin` remains future-owned Irvine32 `INVOKE` routine dispatch and must report `unsupported-irvine-invoke` unless a later accepted phase explicitly implements that exact source form.
+
 ### Runtime contract
 
-- Use `EAX` as an unsigned 32-bit value.
-- Emit exactly 32 binary digits with no separators in v1.
-- Preserve registers and flags.
-- Preflight output length and append no partial digits on output-limit failure.
+- Interpret `EAX` as an unsigned 32-bit value.
+- Emit exactly 32 binary digits.
+- Emit the most-significant bit first and the least-significant bit last.
+- Use digits `0` and `1` only.
+- Emit leading zeroes as needed to reach 32 digits.
+- Append no separators, grouping spaces, `b` suffix, whitespace, CR, LF, prefix, or suffix.
+- Preflight the full 32-byte formatted value against Program Console byte and line limits before committing output.
+- On output-limit failure, append no partial digits from the failing call.
+- Preserve all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
+- Write no simulated memory.
+- Write program output only to Program Console.
+- Write no Simulator Messages on success except non-program-output diagnostics required by active policy.
+
+### Protocol, documentation, and status updates
+
+- Advance implemented runtime/source-run behavior metadata to Phase 93.
+- Set the source-run output-contract token to `phase-93-irvine32-writebin-contract-v1`.
+- Update `README.md`, `docs/SUPPORTED_SYNTAX.md`, `docs/TESTING_GUIDE.md`, `docs/FULL_IMPLEMENTATION_SPEC.md` when needed, `web/index.html`, and stale-artifact checks so active status text agrees on Phase 93.
+- Keep unimplemented sibling Irvine32 routines and unimplemented `INVOKE` forms documented as deferred.
 
 ### Required tests
 
-- all-zero, all-one, low-bit, high-bit, and alternating-bit values.
-- Output-limit failure appends no partial formatted value.
+Source-form and parser tests:
+
+- `CALL WriteBin` after `INCLUDE Irvine32.inc` is accepted.
+- Mixed-case `CALL writebin` is accepted after include under `OPTION CASEMAP:NONE`.
+- `CALL WriteBin` before include reports `missing-irvine32-include` with the exact primary message documented above.
+- Bare `WriteBin` after include reports `invalid-irvine32-call-form` with the exact primary message documented above.
+- `INVOKE WriteBin` remains deferred with `unsupported-irvine-invoke`.
+
+Runtime and output tests:
+
+- `EAX = 00000000h` prints `00000000000000000000000000000000`.
+- `EAX = FFFFFFFFh` prints `11111111111111111111111111111111`.
+- `EAX = 00000001h` prints `00000000000000000000000000000001`.
+- `EAX = 80000000h` prints `10000000000000000000000000000000`.
+- `EAX = AAAAAAAAh` prints `10101010101010101010101010101010`.
+- `EAX = 55555555h` prints `01010101010101010101010101010101`.
+- Output byte-limit failure appends no partial formatted value.
+- Output byte-limit boundary succeeds when exactly 32 bytes fit.
+- Output line-limit behavior is unchanged because this routine emits no line-feed bytes.
+- Success preserves all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
+- Failure preserves all modeled registers, modeled flags, flag-validity metadata, simulated memory, memory-change rows, and previously committed Program Console output.
+
+Boundary tests:
+
+- `WriteDec`, `WriteInt`, `WriteHex`, `WriteString INVOKE`, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, Windows process behavior, and full x86 behavior remain unsupported or deferred as documented.
 
 ## 98. Phase 94 - Irvine32 DumpRegs
 
@@ -25831,134 +26413,308 @@ Implement virtual Irvine32 `WriteBin` as fixed-width binary formatting of `EAX`.
 
 Implement deterministic virtual Irvine32 `DumpRegs` output for modeled VM state.
 
-### Runtime behavior
+This phase must not implement `DumpMem`, input routines, random routines, file routines, WinAPI behavior, PE loading/linking, external libraries, host callbacks, host filesystem behavior, native process behavior, Windows process behavior, or full x86 emulation.
 
-- `DumpRegs` writes canonical registers and modeled flags to Program Console.
-- It reports EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, displayed pseudo-EIP/control-state value, and EFLAGS or modeled flag bits.
-- `DumpRegs` must print the displayed pseudo-EIP/control-state value defined by Phase 68B. It must not print a native x86 instruction address, PE/RVA/linker address, host address, raw VM instruction index, source byte offset, or source-writable register value as `EIP`.
-- It reports only modeled flags with exact labels: CF, ZF, SF, OF. Other real Irvine flags are omitted in the first implementation. If Phase 110F or another later flag-display phase has already added additional modeled flags before `DumpRegs` is implemented, `DumpRegs` must include those modeled flags according to the latest accepted flag-display contract. If those phases have not yet been implemented, Phase 94 must not implement future flag behavior early merely to satisfy a later roadmap note.
-- It preserves all registers and flags.
-- It writes no Simulator Messages unless a console output limit is exceeded.
+### Accepted syntax and source-form diagnostics
 
-### Formatting contract
+Accepted executable source form after `INCLUDE Irvine32.inc`:
 
-The first implementation must use an exact deterministic multi-line format. Example shape:
-
-```text
-EAX=00000001 EBX=00000002 ECX=00000000 EDX=00000000
-ESI=00000000 EDI=00000000 EBP=00000000 ESP=007FFFE0
-EIP=0040100Ch EFLAGS=00000041
-CF=1 ZF=1 SF=0 OF=0
+```asm
+call DumpRegs
 ```
 
-Exact spacing, register order, uppercase hex width, newline placement, and flag labels are part of the golden Program Console contract and must not differ across implementations.
+The Irvine32 routine name is matched case-insensitively even when `OPTION CASEMAP:NONE` is active.
+
+`CALL DumpRegs` before `INCLUDE Irvine32.inc` must be an `assembly-error` with code `missing-irvine32-include` and this primary message:
+
+```text
+CALL DumpRegs requires INCLUDE Irvine32.inc before DumpRegs can be used as a virtual Irvine32 routine.
+```
+
+Bare `DumpRegs` after `INCLUDE Irvine32.inc` must be an `assembly-error` with code `invalid-irvine32-call-form` and this primary message:
+
+```text
+DumpRegs is a virtual Irvine32 routine and must be called with CALL DumpRegs.
+```
+
+`INVOKE DumpRegs` remains future-owned Irvine32 `INVOKE` routine dispatch and must report `unsupported-irvine-invoke` unless a later accepted phase explicitly implements that exact source form.
+
+### Program Console format
+
+The first implementation must use exactly this four-line Program Console output contract for each successful `DumpRegs` call:
+
+```text
+EAX=<eax8> EBX=<ebx8> ECX=<ecx8> EDX=<edx8>\n
+ESI=<esi8> EDI=<edi8> EBP=<ebp8> ESP=<esp8>\n
+EIP=<eip8> EFLAGS=<eflags8>\n
+CF=<cf1> ZF=<zf1> SF=<sf1> OF=<of1>\n
+```
+
+The displayed `\n` sequences in the contract above mean one internal Program Console line-feed byte each. They are not two literal characters in the Program Console stream.
+
+Formatting rules:
+
+- `<eax8>`, `<ebx8>`, `<ecx8>`, `<edx8>`, `<esi8>`, `<edi8>`, `<ebp8>`, `<esp8>`, `<eip8>`, and `<eflags8>` are exactly eight uppercase hexadecimal digits.
+- Do not append `0x`, `h`, grouping separators, or extra spaces.
+- Each of the four lines ends with exactly one internal Program Console line-feed byte.
+- The final line also ends with one internal Program Console line-feed byte.
+- The output uses internal line-feed bytes only. It must not append CRLF.
+- `<cf1>`, `<zf1>`, `<sf1>`, and `<of1>` are `0` or `1` from the current deterministic modeled flag values.
+- `EFLAGS` is the deterministic modeled EFLAGS bitmask for the flags displayed by this phase. In the first implementation, set bit 0 from CF, bit 6 from ZF, bit 7 from SF, and bit 11 from OF. Other bits are zero unless an earlier accepted flag-display phase has already expanded the modeled displayed-flag contract.
+- Displayed flag-validity metadata is not printed in this first implementation. The current deterministic flag values are printed even if validity metadata marks a flag architecturally undefined. Later phases may add validity display only through an explicit spec/guide change.
+- `EIP` is the Phase 68B pseudo-code-address/control-state display value. It must not be a native x86 address, PE/RVA/linker address, host address, Wasm address, raw VM instruction index, source byte offset, or source-writable register value.
+
+### Runtime behavior
+
+- Preflight the complete formatted output against Program Console byte and line limits before appending any `DumpRegs` output for the call.
+- On output-limit failure, append none of the formatted `DumpRegs` output from the failing call.
+- Preserve all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
+- Write no simulated memory.
+- Write program output only to Program Console.
+- Write no Simulator Messages on success except non-program-output diagnostics required by active policy.
+
+### Protocol, documentation, and status updates
+
+- Advance implemented runtime/source-run behavior metadata to Phase 94.
+- Set the source-run output-contract token to `phase-94-irvine32-dumpregs-contract-v1`.
+- Update active source-of-truth documentation and stale-artifact checks so `DumpRegs` is listed as implemented only for direct `CALL DumpRegs` after include.
+- Keep `INVOKE DumpRegs`, `DumpMem`, input routines, random routines, file routines, WinAPI behavior, PE/linker behavior, host behavior, and full x86 behavior documented as deferred or unsupported.
 
 ### Tests
 
-Source-run tests:
+Source-form tests:
 
-- Registers and flags appear with expected values.
-- Program Console contains DumpRegs output.
-- Simulator Messages contain only execution status.
-- DumpRegs preserves VM state.
-- Output limit failure is handled.
-- `DumpRegs` output includes `EIP` as the Phase 68B pseudo-code-address/control-state value.
-- `DumpRegs` does not expose raw VM instruction indexes, native addresses, PE/RVA/linker addresses, host addresses, or source byte offsets as `EIP`.
+- `CALL DumpRegs` after `INCLUDE Irvine32.inc` is accepted.
+- Mixed-case spelling is accepted after include under `OPTION CASEMAP:NONE`.
+- `CALL DumpRegs` before include reports `missing-irvine32-include` with the exact primary message documented above.
+- Bare `DumpRegs` after include reports `invalid-irvine32-call-form` with the exact primary message documented above.
+- `INVOKE DumpRegs` remains deferred with `unsupported-irvine-invoke`.
+
+Golden Program Console tests:
+
+- A fixture with known register values and flags produces exact four-line Program Console text.
+- The final line-feed byte is present.
+- No CR bytes are present.
+- Hex digits are uppercase.
+- `EIP` matches the Phase 68B pseudo-code-address/control-state display value.
+- `EIP` does not expose raw VM instruction indexes, native addresses, PE/RVA/linker addresses, host addresses, Wasm addresses, or source byte offsets.
+
+Failure tests:
+
+- Output byte-limit failure before the first byte appends no `DumpRegs` output from the failing call.
+- Output line-limit failure appends no `DumpRegs` output from the failing call.
+- Failure preserves all modeled registers, modeled flags, flag-validity metadata, simulated memory, memory-change rows, and previously committed Program Console output.
 
 Rendered output tests:
 
-- Program Console formatter preserves newlines and spacing.
+- Program Console formatter preserves all spaces and line-feed placement exactly.
+- Simulator Messages contain only execution status on success.
+- Output-limit failure renders as `resource-limit-error console-output-limit-exceeded` and omits `execution-complete`.
 
-Acceptance criteria
+### Acceptance criteria
 
-A program setting EAX and flags then calling DumpRegs produces exact golden Program Console text.
-
----
+A program setting modeled registers and flags then calling `DumpRegs` produces exact golden Program Console text matching the contract above, preserves VM state, uses output-contract token `phase-94-irvine32-dumpregs-contract-v1`, and does not expose host, PE/linker, Wasm, source-offset, or raw-instruction-index addresses as `EIP`.
 
 ## 99. Phase 95 - Irvine32 DumpMem
 
 ### Goal
 
-Implement deterministic virtual Irvine32 `DumpMem` with checked memory reads.
+Implement deterministic virtual Irvine32 `DumpMem` with checked simulated-memory reads.
+
+This phase must not implement `DumpRegs`, input routines, random routines, file routines, WinAPI behavior, PE loading/linking, external libraries, host callbacks, host filesystem behavior, native process behavior, Windows process behavior, or full x86 emulation.
+
+### Accepted syntax and source-form diagnostics
+
+Accepted executable source form after `INCLUDE Irvine32.inc`:
+
+```asm
+call DumpMem
+```
+
+The Irvine32 routine name is matched case-insensitively even when `OPTION CASEMAP:NONE` is active.
+
+`CALL DumpMem` before `INCLUDE Irvine32.inc` must be an `assembly-error` with code `missing-irvine32-include` and this primary message:
+
+```text
+CALL DumpMem requires INCLUDE Irvine32.inc before DumpMem can be used as a virtual Irvine32 routine.
+```
+
+Bare `DumpMem` after `INCLUDE Irvine32.inc` must be an `assembly-error` with code `invalid-irvine32-call-form` and this primary message:
+
+```text
+DumpMem is a virtual Irvine32 routine and must be called with CALL DumpMem.
+```
+
+`INVOKE DumpMem` remains future-owned Irvine32 `INVOKE` routine dispatch and must report `unsupported-irvine-invoke` unless a later accepted phase explicitly implements that exact source form.
 
 ### Calling convention for first implementation
 
-Use the common Irvine-style inputs:
+Use exactly this input contract:
 
 ```text
-ESI = starting address
+ESI = starting simulated-memory address
 ECX = element count
 EBX = element size in bytes: 1, 2, or 4
 ```
 
-The ESI/ECX/EBX contract above is mandatory for this phase; no alternate calling convention is allowed in this batch.
+No alternate calling convention is allowed in this phase. `ESI` is a simulator VM address only. It is not a host pointer, browser pointer, Wasm linear-memory pointer, Windows virtual address, PE RVA, file offset, source byte offset, or external-library address.
+
+### Dump count limit
+
+Define a named implementation constant:
+
+```c
+VM_IRVINE32_DUMPMEM_MAX_ELEMENTS
+```
+
+The browser/default value is `4096` elements. This is a simulator safety cap, not an Irvine32 semantic guarantee.
+
+Tests may use a smaller test-only max-elements value only through an explicit test configuration path. The test-only override must be unavailable to normal browser execution unless a later accepted phase deliberately documents user-facing configurability.
+
+### Program Console format
+
+`ECX = 0` succeeds and appends no Program Console output.
+
+For `ECX > 0`, output rows use this exact grammar:
+
+```text
+<addr8>: <elements>\n
+```
+
+The displayed `\n` sequence in the grammar above means one internal Program Console line-feed byte. It is not two literal characters in the Program Console stream.
+
+Formatting rules:
+
+- `<addr8>` is the simulated-memory address of the first element displayed on that row, formatted as exactly eight uppercase hexadecimal digits.
+- The colon is followed by one space.
+- `<elements>` contains the row's displayed elements separated by one single space.
+- Every non-empty row ends with exactly one internal Program Console line-feed byte.
+- The final non-empty row also ends with one internal Program Console line-feed byte.
+- The output uses internal line-feed bytes only. It must not append CRLF.
+- Do not append ASCII sidebars, prefixes, suffixes, `h`, `0x`, trailing spaces, or blank lines.
+
+Row width and element formatting:
+
+- If `EBX = 1`, display up to 16 elements per row. Each element is one byte formatted as exactly two uppercase hexadecimal digits.
+- If `EBX = 2`, display up to 8 elements per row. Each element is a 16-bit little-endian value read from two consecutive bytes and formatted as exactly four uppercase hexadecimal digits.
+- If `EBX = 4`, display up to 4 elements per row. Each element is a 32-bit little-endian value read from four consecutive bytes and formatted as exactly eight uppercase hexadecimal digits.
+- The final row may contain fewer elements when `ECX` is not an exact multiple of the row capacity.
+
+Examples use textual `\n` markers to make line-feed placement visible in this document. The Program Console receives line-feed bytes, not backslash-plus-n characters.
+
+```text
+00500000: 01 02 03 04\n
+```
+
+```text
+00500000: 0201 0403\n
+```
+
+```text
+00500000: 04030201\n
+```
 
 ### Runtime behavior
 
-- Validate EBX is 1, 2, or 4.
-- Validate ECX count against a named max dump count to avoid huge output.
-- Read every element through checked memory helpers.
-- Use preflight validation before appending output, so invalid memory does not produce partial dump output.
-- Preserve registers and modeled flags.
-- Write dump output to Program Console only.
+- Validate `EBX` first. Valid values are exactly `1`, `2`, and `4`.
+- Validate `ECX` against `VM_IRVINE32_DUMPMEM_MAX_ELEMENTS` before reading memory.
+- Compute the total byte range using checked unsigned arithmetic before reading memory.
+- Read every byte through checked VM memory helpers.
+- Run mandatory Level 1 memory safety checks before consuming each byte.
+- Run active optional memory/teaching policies according to their documented default, warning, strict, or explicit-off settings.
+- Preflight the complete formatted output against Program Console byte and line limits before appending any `DumpMem` output for the call.
+- On any fatal failure, append no candidate dump output from the failing call.
+- Preserve previously committed Program Console output from earlier successful operations.
+- Preserve all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
+- Write no simulated memory.
+- Write program output only to Program Console.
+- Write no Simulator Messages on success except non-program-output diagnostics required by active policy.
+
+### Runtime diagnostic precedence
+
+After source-form diagnostics have passed, `DumpMem` selects diagnostics in this order:
+
+1. Invalid `EBX` element size.
+2. `ECX` greater than `VM_IRVINE32_DUMPMEM_MAX_ELEMENTS`.
+3. Address arithmetic overflow while computing the requested byte range.
+4. Mandatory checked-memory read failure for any byte in the requested range.
+5. Strict `uninitialized-read` failure for any byte in the requested range.
+6. `console-output-limit-exceeded` if committing the complete formatted dump would exceed configured Program Console byte or line limits.
+7. Non-fatal `uninitialized-read` warnings collected under warning mode for a successful call.
+
+If a fatal diagnostic occurs, suppress non-fatal uninitialized-read warnings collected only for candidate bytes of the failing `DumpMem` call. Preserve warnings from earlier completed operations.
 
 ### Diagnostics
+
+Required diagnostic codes:
 
 - `invalid-dumpmem-element-size`
 - `dumpmem-count-limit-exceeded`
 - `invalid-memory-read`
+- `uninitialized-read`
 - `console-output-limit-exceeded`
+
+Structured diagnostics must include source line, source column, byte offset, and span length where source location is known. Runtime diagnostics caused by executing `call DumpMem` must point at the call instruction as precisely as the current diagnostic infrastructure supports. Diagnostics should include relevant `ESI`, `ECX`, `EBX`, requested byte count, failing address, and configured limit metadata where supported.
+
+### Protocol, documentation, and status updates
+
+- Advance implemented runtime/source-run behavior metadata to Phase 95.
+- Set the source-run output-contract token to `phase-95-irvine32-dumpmem-contract-v1`.
+- Update active source-of-truth documentation and stale-artifact checks so `DumpMem` is listed as implemented only for direct `CALL DumpMem` after include.
+- Keep `INVOKE DumpMem`, input routines, random routines, file routines, WinAPI behavior, PE/linker behavior, host behavior, and full x86 behavior documented as deferred or unsupported.
 
 ### Tests
 
-Source-run acceptance program:
+Source-form tests:
 
-```asm
-.data
-arr BYTE 01h, 02h, 03h, 04h
-.code
-main PROC
-    mov esi, OFFSET arr
-    mov ecx, 4
-    mov ebx, 1
-    call DumpMem
-    exit
-main ENDP
-END main
-```
+- `CALL DumpMem` after `INCLUDE Irvine32.inc` is accepted.
+- Mixed-case spelling is accepted after include under `OPTION CASEMAP:NONE`.
+- `CALL DumpMem` before include reports `missing-irvine32-include` with the exact primary message documented above.
+- Bare `DumpMem` after include reports `invalid-irvine32-call-form` with the exact primary message documented above.
+- `INVOKE DumpMem` remains deferred with `unsupported-irvine-invoke`.
 
-Expected Program Console must match the exact selected dump format.
+Golden Program Console tests:
 
-Additional tests:
+- `EBX = 1` formats bytes exactly with 16 elements per full row.
+- `EBX = 2` formats little-endian 16-bit values exactly with 8 elements per full row.
+- `EBX = 4` formats little-endian 32-bit values exactly with 4 elements per full row.
+- Multi-row output has exact row addresses, spacing, uppercase hex, and final line-feed behavior.
+- `ECX = 0` appends no Program Console output and succeeds.
+- Program Console contains only `DumpMem` output on success.
+- Simulator Messages contain diagnostics, warnings, and execution status only.
 
-- EBX = 1 formatting.
-- EBX = 2 formatting.
-- EBX = 4 formatting.
-- EBX invalid value rejected with `invalid-dumpmem-element-size`.
-- ECX = 0 produces empty or header-only output according to the exact documented DumpMem format.
-- ECX above the named max dump count fails with `dumpmem-count-limit-exceeded`.
+Memory-policy tests:
+
+- Dumping initialized `.data` memory emits no `uninitialized-read` diagnostic.
+- Dumping `.CONST` memory succeeds and does not bypass `.CONST` write protection.
+- Dumping `.DATA?`, `?`, or `DUP(?)` bytes that still carry uninitialized-origin metadata emits default `uninitialized-read` warning and continues if no fatal diagnostic occurs.
+- Dumping the same `.DATA?` bytes with explicit uninitialized-read off emits no `uninitialized-read` warning and uses deterministic zero-filled bytes.
+- Dumping the same `.DATA?` bytes with strict uninitialized-read mode stops before appending candidate Program Console output.
+- Dumping bytes that were originally `.DATA?` but have all been overwritten by the simulated program emits no `uninitialized-read` warning.
+
+Failure tests:
+
+- `EBX = 0`, `EBX = 3`, and another invalid element size reject with `invalid-dumpmem-element-size`.
+- `ECX` above the named max dump count fails with `dumpmem-count-limit-exceeded`.
 - Invalid starting address fails before partial Program Console output.
 - Address range that starts valid but crosses into unreadable memory fails before partial Program Console output.
-- `.CONST` memory can be dumped.
-- Dumping initialized `.data` memory emits no `uninitialized-read` diagnostic.
-- Dumping `.DATA?`, `?`, or `DUP(?)` bytes that still carry uninitialized-origin metadata emits default `uninitialized-read` warning after Phase 53C - Default Teaching Diagnostics for Existing Warning Modes and then continues if no fatal diagnostic occurs.
-- Dumping the same `.DATA?` bytes with explicit uninitialized-read off emits no `uninitialized-read` warning and uses deterministic zero-filled bytes.
-- Dumping the same `.DATA?` bytes with strict uninitialized-read mode stops before appending partial Program Console output.
-- Dumping bytes that were originally `.DATA?` but have all been overwritten by the simulated program emits no `uninitialized-read` warning.
-- Program Console contains only DumpMem output.
-- Simulator Messages contain diagnostics, warnings, and execution status only.
-- Registers and modeled flags are preserved on success.
-- Registers, modeled flags, Program Console output, and memory-change rows are preserved on fatal failure.
+- Address arithmetic overflow fails before partial Program Console output.
+- Output byte-limit failure appends no partial dump output.
+- Output line-limit failure appends no partial dump output.
+- Every fatal failure preserves all modeled registers, modeled flags, flag-validity metadata, simulated memory, memory-change rows, and previously committed Program Console output.
 
 Rendered Simulator Messages tests:
 
-- Invalid memory read points to `call DumpMem` and includes ESI/ECX/EBX metadata.
-- Invalid element size points to `call DumpMem` and includes the rejected EBX value.
-- Dump count limit failure points to `call DumpMem` and includes ECX plus the configured limit.
-- Default uninitialized-origin dump warning renders as `uninitialized-read` and identifies the final read range and byte count.
+- Invalid element size points to `call DumpMem` and includes the rejected `EBX` value.
+- Dump count limit failure points to `call DumpMem` and includes `ECX` plus the configured limit.
+- Invalid memory read points to `call DumpMem` and includes `ESI`, `ECX`, `EBX`, and failing-address metadata where supported.
+- Default uninitialized-origin dump warning renders as `uninitialized-read` and identifies the final read range and byte count where supported.
 - Strict uninitialized-origin dump failure renders as `runtime-error uninitialized-read` and no `execution-complete` message follows.
+- Output-limit failure renders as `resource-limit-error console-output-limit-exceeded` and no `execution-complete` message follows.
 
----
+### Acceptance criteria
+
+A source-run program that initializes a byte array, sets `ESI`, `ECX`, and `EBX`, and calls `DumpMem` produces exact golden Program Console text matching the format above, preserves VM state, reads only simulated VM memory through checked memory helpers, and uses output-contract token `phase-95-irvine32-dumpmem-contract-v1`.
 
 ## 100. Phase 96 - Deterministic Irvine32 Random Runtime State
 

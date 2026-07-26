@@ -11,12 +11,12 @@
  * Phase 70 helper plain near RET, Phase 71 root-code-stream RET termination, Phase 72A source-level PUSH/POP, Phase 73 LEAVE, Phase 74 RET imm16 cleanup,
  * Phase 71D configurable procedure-fallthrough diagnostics, Phase 71E
  * entry-procedure auto-stop compatibility, Phase 71C code-stream
- * end-falloff diagnostics, Irvine32 exit, Phase 87 virtual Irvine32 Crlf, and Phase 88 virtual Irvine32 WriteChar
+ * end-falloff diagnostics, Irvine32 exit, Phase 87 virtual Irvine32 Crlf, Phase 88 virtual Irvine32 WriteChar, and Phase 89 virtual Irvine32 WriteString
  * over the currently supported register and memory operand forms. It records
  * last-step deltas by snapshotting CPU state and copying memory-module byte
  * changes after each successful step. Phase 68A initializes ESP from the active
  * stack region at startup; source-level PUSH/POP, LEAVE, and RET imm16 cleanup are supported,
- * and Phase 77 saves and restores PROC USES registers on supported direct CALL/RET paths. Phase 79 creates automatic LOCAL frames for selected-entry and direct-CALL procedure paths, and Phase 80 resolves supported source-level LOCAL operands through active frame-relative storage. Phase 84 captures and commits accepted same-file user-procedure INVOKE DWORD arguments, including ADDR active-LOCAL arguments. Phase 87 appends virtual Irvine32 Crlf output through Program Console without changing registers, flags, or memory. Phase 88 appends the low byte of AL for direct virtual Irvine32 WriteChar without changing registers, flags, or memory. ENTER, far returns, general source-level ADDR outside accepted INVOKE arguments, and Irvine32 routines beyond exit, Crlf, and direct WriteChar remain later milestones. Phase 69
+ * and Phase 77 saves and restores PROC USES registers on supported direct CALL/RET paths. Phase 79 creates automatic LOCAL frames for selected-entry and direct-CALL procedure paths, and Phase 80 resolves supported source-level LOCAL operands through active frame-relative storage. Phase 84 captures and commits accepted same-file user-procedure INVOKE DWORD arguments, including ADDR active-LOCAL arguments. Phase 87 appends virtual Irvine32 Crlf output through Program Console without changing registers, flags, or memory. Phase 88 appends the low byte of AL for direct virtual Irvine32 WriteChar without changing registers, flags, or memory. Phase 89 appends a null-terminated byte string addressed by EDX for direct virtual Irvine32 WriteString without changing registers, flags, or memory. ENTER, far returns, general source-level ADDR outside accepted INVOKE arguments, and Irvine32 routines beyond exit, Crlf, direct WriteChar, and direct WriteString remain later milestones. Phase 69
  * implements direct user-procedure CALL as a checked internal stack write,
  * Phase 70 implements helper RET as a checked internal stack read, and Phase 71
  * treats an eligible root-code-stream RET as successful termination. Phase 68B
@@ -28,6 +28,7 @@
 
 #include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /// Number of source-visible canonical registers captured for register deltas.
@@ -4981,6 +4982,126 @@ static VmExecStatus vm_exec_execute_irvine32_writechar(Vm *vm, const VmIrInstruc
     return vm_append_program_console_output(vm, &output_byte, 1U, instruction);
 }
 
+
+/// Grows a candidate WriteString output buffer while preserving existing bytes.
+///
+/// @param inout_buffer Owned candidate buffer pointer to grow.
+/// @param inout_capacity Current capacity, updated on success.
+/// @param needed_capacity Required capacity in bytes.
+/// @return true when the buffer can hold @p needed_capacity bytes.
+static bool vm_exec_ensure_writestring_buffer(char **inout_buffer, size_t *inout_capacity, size_t needed_capacity) {
+    size_t new_capacity = 64U;
+    char *new_buffer = NULL;
+
+    if (inout_buffer == NULL || inout_capacity == NULL) {
+        return false;
+    }
+    if (*inout_capacity >= needed_capacity && *inout_buffer != NULL) {
+        return true;
+    }
+    if (*inout_capacity > new_capacity) {
+        new_capacity = *inout_capacity;
+    }
+    while (new_capacity < needed_capacity) {
+        if (new_capacity > SIZE_MAX / 2U) {
+            new_capacity = needed_capacity;
+            break;
+        }
+        new_capacity *= 2U;
+    }
+    new_buffer = (char *)realloc(*inout_buffer, new_capacity);
+    if (new_buffer == NULL) {
+        return false;
+    }
+    *inout_buffer = new_buffer;
+    *inout_capacity = new_capacity;
+    return true;
+}
+
+/// Records an address-overflow memory diagnostic for WriteString scanning.
+///
+/// @param vm VM whose last diagnostic should be updated.
+/// @param instruction Instruction associated with the failed scan.
+/// @param address First address that could not be represented.
+static void vm_exec_set_writestring_address_overflow_diagnostic(Vm *vm, const VmIrInstruction *instruction, uint32_t address) {
+    VmMemoryDiagnostic memory_diagnostic;
+
+    memset(&memory_diagnostic, 0, sizeof(memory_diagnostic));
+    memory_diagnostic.status = VM_MEMORY_STATUS_INVALID_ADDRESS;
+    memory_diagnostic.access_type = VM_MEMORY_ACCESS_READ;
+    memory_diagnostic.address = address;
+    memory_diagnostic.size = 1U;
+    vm_exec_set_memory_diagnostic(vm, instruction, VM_MEMORY_STATUS_INVALID_ADDRESS, &memory_diagnostic);
+}
+
+/// Executes virtual Irvine32 WriteString.
+///
+/// WriteString reads EDX as a simulator VM address, scans checked memory for a
+/// null terminator, buffers all candidate bytes, and commits the complete span
+/// to Program Console only after validation succeeds. The routine preserves all
+/// registers, modeled flags, flag-validity metadata, simulated memory, and
+/// memory-change rows.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction WriteString instruction descriptor used for diagnostics.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_irvine32_writestring(Vm *vm, const VmIrInstruction *instruction) {
+    uint32_t edx = 0U;
+    uint32_t limit = VM_IRVINE32_WRITESTRING_SCAN_LIMIT_BYTES;
+    uint32_t index = 0U;
+    char *candidate = NULL;
+    size_t candidate_count = 0U;
+    size_t candidate_capacity = 0U;
+    VmExecStatus append_status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (instruction->destination.kind != VM_IR_OPERAND_NONE || instruction->source.kind != VM_IR_OPERAND_NONE) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_EDX, &edx)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    limit = vm->irvine32_writestring_scan_limit_bytes != 0U ? vm->irvine32_writestring_scan_limit_bytes : VM_IRVINE32_WRITESTRING_SCAN_LIMIT_BYTES;
+    for (index = 0U; index < limit; index += 1U) {
+        uint32_t address = 0U;
+        uint8_t byte_value = 0U;
+        VmMemoryDiagnostic memory_diagnostic;
+        VmMemoryStatus memory_status = VM_MEMORY_STATUS_OK;
+
+        if (index > UINT32_MAX - edx) {
+            free(candidate);
+            vm_exec_set_writestring_address_overflow_diagnostic(vm, instruction, UINT32_MAX);
+            return VM_EXEC_STATUS_MEMORY_ERROR;
+        }
+        address = edx + index;
+        memset(&memory_diagnostic, 0, sizeof(memory_diagnostic));
+        memory_status = vm_memory_read_u8(&vm->memory, address, &byte_value, &memory_diagnostic);
+        vm_exec_record_memory_access(vm, VM_EXEC_MEMORY_ACCESS_READ, address, 8U, memory_status);
+        if (!vm_memory_status_succeeded(memory_status)) {
+            free(candidate);
+            vm_exec_set_memory_diagnostic(vm, instruction, memory_status, &memory_diagnostic);
+            return VM_EXEC_STATUS_MEMORY_ERROR;
+        }
+        if (byte_value == 0U) {
+            append_status = vm_append_program_console_output(vm, candidate, candidate_count, instruction);
+            free(candidate);
+            return append_status;
+        }
+        if (!vm_exec_ensure_writestring_buffer(&candidate, &candidate_capacity, candidate_count + 1U)) {
+            free(candidate);
+            return VM_EXEC_STATUS_INVALID_ARGUMENT;
+        }
+        candidate[candidate_count] = (char)byte_value;
+        candidate_count += 1U;
+    }
+
+    free(candidate);
+    return VM_EXEC_STATUS_STRING_SCAN_LIMIT_EXCEEDED;
+}
+
 /// Executes one already-fetched instruction.
 ///
 /// @param vm VM instance to mutate.
@@ -5142,6 +5263,8 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             return vm_exec_execute_irvine32_crlf(vm, instruction);
         case VM_IR_OPCODE_IRVINE32_WRITECHAR:
             return vm_exec_execute_irvine32_writechar(vm, instruction);
+        case VM_IR_OPCODE_IRVINE32_WRITESTRING:
+            return vm_exec_execute_irvine32_writestring(vm, instruction);
         default:
             return VM_EXEC_STATUS_INVALID_INSTRUCTION;
     }
@@ -5239,6 +5362,7 @@ VmExecStatus vm_init_with_layout_policy(Vm *vm, const VmLayoutPolicy *layout_pol
     vm->procedure_fallthrough_policy = VM_PROCEDURE_FALLTHROUGH_POLICY_WARN;
     vm->entry_procedure_end_mode = VM_ENTRY_PROCEDURE_END_MODE_CODE_STREAM;
     vm->call_depth_limit = VM_DEFAULT_CALL_DEPTH_LIMIT;
+    vm->irvine32_writestring_scan_limit_bytes = VM_IRVINE32_WRITESTRING_SCAN_LIMIT_BYTES;
     vm_cpu_init(&vm->cpu);
     if (vm_console_init(&vm->program_console) != VM_CONSOLE_STATUS_OK) {
         vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_INVALID_ARGUMENT);
@@ -5285,6 +5409,7 @@ VmExecStatus vm_init(Vm *vm, const VmMemoryConfig *memory_config) {
     vm->procedure_fallthrough_policy = VM_PROCEDURE_FALLTHROUGH_POLICY_WARN;
     vm->entry_procedure_end_mode = VM_ENTRY_PROCEDURE_END_MODE_CODE_STREAM;
     vm->call_depth_limit = VM_DEFAULT_CALL_DEPTH_LIMIT;
+    vm->irvine32_writestring_scan_limit_bytes = VM_IRVINE32_WRITESTRING_SCAN_LIMIT_BYTES;
     vm_cpu_init(&vm->cpu);
     if (vm_console_init(&vm->program_console) != VM_CONSOLE_STATUS_OK) {
         vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_INVALID_ARGUMENT);
@@ -5442,6 +5567,22 @@ uint32_t vm_current_call_depth(const Vm *vm) {
         return 0U;
     }
     return vm->current_call_depth > (size_t)UINT32_MAX ? UINT32_MAX : (uint32_t)vm->current_call_depth;
+}
+
+VmExecStatus vm_set_irvine32_writestring_scan_limit(Vm *vm, uint32_t limit_bytes) {
+    if (vm == NULL || limit_bytes == 0U) {
+        if (vm != NULL) {
+            vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL);
+        }
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    vm->irvine32_writestring_scan_limit_bytes = limit_bytes;
+    vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
+    return VM_EXEC_STATUS_OK;
+}
+
+uint32_t vm_irvine32_writestring_scan_limit(const Vm *vm) {
+    return vm != NULL && vm->irvine32_writestring_scan_limit_bytes != 0U ? vm->irvine32_writestring_scan_limit_bytes : VM_IRVINE32_WRITESTRING_SCAN_LIMIT_BYTES;
 }
 
 const VmConsole *vm_program_console(const Vm *vm) {
@@ -5879,6 +6020,8 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "local-operand-no-active-frame";
         case VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED:
             return "console-output-limit-exceeded";
+        case VM_EXEC_STATUS_STRING_SCAN_LIMIT_EXCEEDED:
+            return "string-scan-limit-exceeded";
         default:
             return NULL;
     }

@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 88 Irvine32 WriteChar coverage.
+ * @brief Unit tests for the VM executor through Phase 89 Irvine32 WriteString coverage.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
@@ -8,7 +8,7 @@
  * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end-mode compatibility, Phase 71F explicit-exit fallthrough regression coverage, Phase 72
  * call-depth resource-limit coverage, Phase 72A source-level PUSH/POP,
  * Phase 73 LEAVE frame teardown, Phase 74 RET imm16 cleanup, and
- * Phase 77 PROC USES runtime save/restore, Phase 79 automatic LOCAL stack allocation/lifetime, Phase 80 LOCAL operand active-frame checks, Phase 87 virtual Irvine32 Crlf output, and Phase 88 virtual Irvine32 WriteChar output. They intentionally avoid parser and browser UI behavior except for the Phase 42 virtual exit terminator and focused Irvine32 routine contracts.
+ * Phase 77 PROC USES runtime save/restore, Phase 79 automatic LOCAL stack allocation/lifetime, Phase 80 LOCAL operand active-frame checks, Phase 87 virtual Irvine32 Crlf output, and Phase 88 virtual Irvine32 WriteChar output, and Phase 89 virtual Irvine32 WriteString output. They intentionally avoid parser and browser UI behavior except for the Phase 42 virtual exit terminator and focused Irvine32 routine contracts.
  */
 
 #include <stdbool.h>
@@ -971,6 +971,127 @@ static int test_phase88_irvine32_writechar_limit_failure_is_atomic(void) {
         failures += record_failure("WriteChar line-limit failure should record output-limit diagnostic status");
     }
 
+    vm_deinit(&vm);
+    return failures;
+}
+
+
+/// Verifies Phase 89 WriteString scans checked VM memory and preserves state.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase89_irvine32_writestring_appends_bytes_and_preserves_state(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t value = 0U;
+    const VmExecDelta *delta = NULL;
+    const uint32_t address = VM_MEMORY_DEFAULT_DATA_BASE;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_IRVINE32_WRITESTRING, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 12U, "call WriteString", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteString preservation test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteString preservation program should load");
+    failures += vm_memory_write_u8(&vm.memory, address + 0U, (uint8_t)'H', NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("WriteString fixture should write H");
+    failures += vm_memory_write_u8(&vm.memory, address + 1U, (uint8_t)'i', NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("WriteString fixture should write i");
+    failures += vm_memory_write_u8(&vm.memory, address + 2U, 0U, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("WriteString fixture should write null terminator");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, address) ? 0 : record_failure("seed EDX should succeed before WriteString");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x11111111U) ? 0 : record_failure("seed EAX should succeed before WriteString");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_CF) ? 0 : record_failure("seed CF should succeed before WriteString");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 13U, 1U, 130U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity before WriteString should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "WriteString should execute successfully");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "Hi", "WriteString should append bytes before the null terminator");
+    failures += expect_size(vm_console_byte_count(vm_program_console(&vm)), 2U, "WriteString should commit two bytes for Hi");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &value) ? 0 : record_failure("EDX read after WriteString should succeed");
+    failures += expect_u32(value, address, "WriteString should preserve EDX");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &value) ? 0 : record_failure("EAX read after WriteString should succeed");
+    failures += expect_u32(value, 0x11111111U, "WriteString should preserve unrelated registers");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "WriteString should preserve CF");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 13U, "WriteString should preserve OF validity metadata");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta->register_change_count, 0U, "WriteString should report no register changes");
+    failures += expect_size(delta->flag_change_count, 0U, "WriteString should report no flag changes");
+    failures += expect_size(delta->memory_change_count, 0U, "WriteString should report no memory changes");
+    failures += expect_size(delta->memory_access_count, 3U, "WriteString should report reads for each byte through the terminator");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 89 WriteString fatal failures append no candidate bytes.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase89_irvine32_writestring_failures_are_atomic(void) {
+    int failures = 0;
+    Vm vm;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const uint32_t address = VM_MEMORY_DEFAULT_DATA_BASE;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_IRVINE32_WRITESTRING, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 14U, "call WriteString", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteString output-limit test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteString output-limit program should load");
+    failures += vm_memory_write_u8(&vm.memory, address + 0U, (uint8_t)'b', NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("WriteString fixture should write b");
+    failures += vm_memory_write_u8(&vm.memory, address + 1U, (uint8_t)'l', NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("WriteString fixture should write l");
+    failures += vm_memory_write_u8(&vm.memory, address + 2U, 0U, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("WriteString fixture should write terminator");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, address) ? 0 : record_failure("seed EDX should succeed before output-limit WriteString");
+    failures += expect_status(vm_append_program_console_output(&vm, "ok", 2U, NULL), VM_EXEC_STATUS_OK, "preexisting WriteString output-limit text should commit");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 2U, 100U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "WriteString byte-limit fixture should configure at current byte count");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED, "WriteString beyond byte limit should fail");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "ok", "WriteString byte-limit failure should preserve prior output only");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED) {
+        failures += record_failure("WriteString byte-limit failure should record output-limit diagnostic status");
+    }
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteString line-limit test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteString line-limit program should load");
+    failures += vm_memory_write_u8(&vm.memory, address + 0U, (uint8_t)'x', NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("WriteString line fixture should write x");
+    failures += vm_memory_write_u8(&vm.memory, address + 1U, (uint8_t)'\n', NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("WriteString line fixture should write newline");
+    failures += vm_memory_write_u8(&vm.memory, address + 2U, 0U, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("WriteString line fixture should write terminator");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, address) ? 0 : record_failure("seed EDX should succeed before line-limit WriteString");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 100U, 1U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "WriteString line-limit fixture should configure max line count");
+    failures += expect_status(vm_append_program_console_output(&vm, "ok\n", 3U, NULL), VM_EXEC_STATUS_OK, "preexisting WriteString line-limit text should commit");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED, "WriteString beyond line limit should fail");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "ok\n", "WriteString line-limit failure should preserve prior output only");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED) {
+        failures += record_failure("WriteString line-limit failure should record output-limit diagnostic status");
+    }
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteString scan-limit test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteString scan-limit program should load");
+    failures += vm_memory_write_u8(&vm.memory, address + 0U, (uint8_t)'a', NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("WriteString scan fixture should write a");
+    failures += vm_memory_write_u8(&vm.memory, address + 1U, (uint8_t)'b', NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("WriteString scan fixture should write b");
+    failures += vm_memory_write_u8(&vm.memory, address + 2U, (uint8_t)'c', NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("WriteString scan fixture should write c");
+    failures += vm_memory_write_u8(&vm.memory, address + 3U, 0U, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("WriteString scan fixture should write terminator one byte too late");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, address) ? 0 : record_failure("seed EDX should succeed before scan-limit WriteString");
+    failures += expect_status(vm_set_irvine32_writestring_scan_limit(&vm, 3U), VM_EXEC_STATUS_OK, "WriteString scan-limit override should accept positive limits");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_STRING_SCAN_LIMIT_EXCEEDED, "WriteString should fail when terminator is at index N");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "", "WriteString scan-limit failure should append no candidate bytes");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_STRING_SCAN_LIMIT_EXCEEDED) {
+        failures += record_failure("WriteString scan-limit failure should record scan-limit diagnostic status");
+    }
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteString unreadable-crossing test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteString unreadable-crossing program should load");
+    {
+        const uint32_t heap_last = VM_MEMORY_DEFAULT_HEAP_BASE + VM_MEMORY_DEFAULT_HEAP_SIZE - 1U;
+        failures += vm_memory_write_u8(&vm.memory, heap_last, (uint8_t)'q', NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("WriteString crossing fixture should write final heap byte");
+        failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, heap_last) ? 0 : record_failure("seed EDX should succeed before unreadable-crossing WriteString");
+    }
+    failures += expect_status(vm_append_program_console_output(&vm, "pre", 3U, NULL), VM_EXEC_STATUS_OK, "preexisting unreadable-crossing output should commit");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "WriteString crossing out of readable memory should fail");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "pre", "WriteString unreadable-crossing failure should preserve prior output only");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_MEMORY_ERROR || diagnostic->memory_status != VM_MEMORY_STATUS_INVALID_ADDRESS) {
+        failures += record_failure("WriteString unreadable-crossing failure should record checked-memory read status");
+    }
     vm_deinit(&vm);
     return failures;
 }
@@ -6759,6 +6880,8 @@ int main(void) {
     failures += test_phase87_irvine32_crlf_limit_failure_is_atomic();
     failures += test_phase88_irvine32_writechar_appends_al_and_preserves_state();
     failures += test_phase88_irvine32_writechar_limit_failure_is_atomic();
+    failures += test_phase89_irvine32_writestring_appends_bytes_and_preserves_state();
+    failures += test_phase89_irvine32_writestring_failures_are_atomic();
     failures += test_neg_register_memory_and_flags();
     failures += test_phase20_error_paths();
     failures += test_adc_register_carry_propagation();
@@ -6868,6 +6991,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 88 Irvine32 WriteChar coverage passed.");
+    puts("Executor tests through Phase 89 Irvine32 WriteString coverage passed.");
     return 0;
 }

@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for parser behavior through Phase 88 Irvine32 WriteChar coverage.
+ * @brief Unit and integration tests for parser behavior through Phase 89 Irvine32 WriteString coverage.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
@@ -8,7 +8,7 @@
  * Phase 67A procedure-range metadata, Phase 68 call-target classification
  * metadata, Phase 68B EIP source-operand restrictions, Phase 69 direct CALL,
  * Phase 70 plain near RET, Phase 72A source-level PUSH/POP, Phase 73
- * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, Phase 78 LOCAL parser metadata, Phase 78A limited OPTION NOKEYWORD support, Phase 81 PROTO metadata, Phase 82 zero-argument INVOKE parsing and targeted INVOKE diagnostics, Phase 83 helper-level ADDR record preparation, Phase 84 INVOKE DWORD argument parsing, Phase 87 virtual Irvine32 Crlf parser paths, Phase 88 virtual Irvine32 WriteChar parser paths, unsupported syntax, INCLUDELIB non-goal diagnostics,
+ * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, Phase 78 LOCAL parser metadata, Phase 78A limited OPTION NOKEYWORD support, Phase 81 PROTO metadata, Phase 82 zero-argument INVOKE parsing and targeted INVOKE diagnostics, Phase 83 helper-level ADDR record preparation, Phase 84 INVOKE DWORD argument parsing, Phase 87 virtual Irvine32 Crlf parser paths, Phase 88 virtual Irvine32 WriteChar parser paths, Phase 89 virtual Irvine32 WriteString parser paths, unsupported syntax, INCLUDELIB non-goal diagnostics,
  * and integration with the current executor
  * without adding future execution behavior.
  */
@@ -1041,11 +1041,11 @@ static int test_phase68_call_target_classifier_metadata(void) {
     failures += expect_u32((uint32_t)classification.irvine32_symbol_class, (uint32_t)VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE, "WriteChar should expose the central registry class");
 
     classification = vm_parser_classify_call_target_name(&context, "WriteString", strlen("WriteString"));
-    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_IRVINE32_PLANNED, "WriteString should classify as planned Irvine32 routine");
-    failures += expect_u32((uint32_t)classification.irvine32_symbol_class, (uint32_t)VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "WriteString should expose the central registry class");
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_IRVINE32_SUPPORTED, "WriteString should classify as supported Irvine32 routine in Phase 89");
+    failures += expect_u32((uint32_t)classification.irvine32_symbol_class, (uint32_t)VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE, "WriteString should expose the central registry class");
 
     classification = vm_parser_classify_call_target_name(&context, "writestring", strlen("writestring"));
-    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_IRVINE32_PLANNED, "Irvine32 lookup should be case-insensitive");
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_IRVINE32_SUPPORTED, "Irvine32 lookup should be case-insensitive");
 
     classification = vm_parser_classify_call_target_name(&context, "exit", strlen("exit"));
     failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_IRVINE32_SUPPORTED, "exit should classify as supported virtual Irvine32 terminator");
@@ -1152,7 +1152,7 @@ static int test_phase68_call_target_classifier_casemap_policy(void) {
     failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_UNKNOWN_SYMBOL, "CASEMAP:NONE classifier should not fold user procedure names");
 
     classification = vm_parser_classify_call_target_name(&context, "writestring", strlen("writestring"));
-    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_IRVINE32_PLANNED, "CASEMAP:NONE should not make Irvine32 names case-sensitive");
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_IRVINE32_SUPPORTED, "CASEMAP:NONE should not make Irvine32 names case-sensitive for supported Irvine32 routines");
 
     return failures;
 }
@@ -1435,13 +1435,13 @@ static int test_phase69_direct_call_target_rejections(void) {
         "INCLUDE Irvine32.inc\n"
         ".code\n"
         "main PROC\n"
-        "    call WriteString\n"
+        "    call WriteDec\n"
         "main ENDP\n"
         "END main\n",
         &buffers,
         &result
-    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL Irvine32 target should diagnose");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "CALL Irvine32 target should remain deferred");
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL planned Irvine32 target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "CALL planned Irvine32 target should remain deferred");
 
     failures += expect_parser_status(parse_for_test(
         "INCLUDE Irvine32.inc\n"
@@ -4496,8 +4496,8 @@ static int test_phase41_virtual_irvine32_include_records_registry(void) {
     failures += expect_u32(vm_parser_classify_irvine32_symbol("cRlF", 4U), VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE, "Crlf lookup should remain case-insensitive");
     failures += expect_u32(vm_parser_classify_irvine32_symbol("WriteChar", 9U), VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE, "WriteChar should be a supported Irvine32 routine in Phase 88");
     failures += expect_u32(vm_parser_classify_irvine32_symbol("wRiTeChAr", 9U), VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE, "WriteChar lookup should remain case-insensitive");
-    failures += expect_u32(vm_parser_classify_irvine32_symbol("WriteString", 11U), VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "WriteString should be a planned Irvine32 routine");
-    failures += expect_u32(vm_parser_classify_irvine32_symbol("writestring", 11U), VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "Irvine32 routine lookup should be case-insensitive");
+    failures += expect_u32(vm_parser_classify_irvine32_symbol("WriteString", 11U), VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE, "WriteString should be a supported Irvine32 routine in Phase 89");
+    failures += expect_u32(vm_parser_classify_irvine32_symbol("writestring", 11U), VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE, "Irvine32 routine lookup should be case-insensitive");
     failures += expect_u32(vm_parser_classify_irvine32_symbol("OpenInputFile", 13U), VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE, "file I/O routines should be known unsupported routines");
     failures += expect_u32(vm_parser_classify_irvine32_symbol("ExitProcess", 11U), VM_IRVINE32_SYMBOL_CLASS_WINDOWS_API_OR_EXTERNAL, "Windows API names should be classified separately");
     failures += expect_u32(vm_parser_classify_irvine32_symbol("UnknownRoutine", 14U), VM_IRVINE32_SYMBOL_CLASS_UNKNOWN, "unknown names should remain unknown");
@@ -4850,13 +4850,13 @@ static int test_phase41_irvine32_routine_diagnostics(void) {
         "INCLUDE Irvine32.inc\n"
         ".code\n"
         "main PROC\n"
-        "    WriteString\n"
+        "    WriteDec\n"
         "main ENDP\n"
         "END main\n";
     const char *without_include =
         ".code\n"
         "main PROC\n"
-        "    WriteString\n"
+        "    WriteDec\n"
         "main ENDP\n"
         "END main\n";
     const char *windows_name =
@@ -4955,7 +4955,7 @@ static int test_phase87_irvine32_crlf_parser_paths(void) {
         "INCLUDE Irvine32.inc\n"
         ".code\n"
         "main PROC\n"
-        "    call WriteString\n"
+        "    call WriteDec\n"
         "main ENDP\n"
         "END main\n";
 
@@ -4986,9 +4986,9 @@ static int test_phase87_irvine32_crlf_parser_paths(void) {
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_CALL_FORM, "Bare Crlf should use the invalid Irvine32 call-form diagnostic");
     failures += expect_string(buffers.diagnostics[0].message, "Crlf is a virtual Irvine32 routine and must be called with CALL Crlf or zero-argument INVOKE Crlf.", "Bare Crlf diagnostic should state the supported source forms");
 
-    failures += expect_parser_status(parse_for_test(deferred_write_string, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "WriteString CALL should remain deferred after Phase 87");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "WriteString CALL should keep Irvine32 deferred diagnostic");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "deferred", "WriteString diagnostic should still say deferred");
+    failures += expect_parser_status(parse_for_test(deferred_write_string, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "WriteDec CALL should remain deferred after Phase 89");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "WriteDec CALL should keep Irvine32 deferred diagnostic");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "deferred", "WriteDec diagnostic should still say deferred");
 
     return failures;
 }
@@ -5030,11 +5030,34 @@ static int test_phase88_irvine32_writechar_parser_paths(void) {
         "    WriteChar\n"
         "main ENDP\n"
         "END main\n";
-    const char *deferred_write_string =
+    const char *accepted_writestring =
         "INCLUDE Irvine32.inc\n"
+        "OPTION CASEMAP:NONE\n"
+        ".data\n"
+        "msg BYTE \"ok\",0\n"
+        ".code\n"
+        "main PROC\n"
+        "    CALL wRiTeStRiNg\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *writestring_without_include =
         ".code\n"
         "main PROC\n"
         "    call WriteString\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *bare_writestring =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    WriteString\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *invoke_writestring =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    invoke WriteString\n"
         "main ENDP\n"
         "END main\n";
 
@@ -5059,8 +5082,24 @@ static int test_phase88_irvine32_writechar_parser_paths(void) {
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_CALL_FORM, "Bare WriteChar should use the invalid Irvine32 call-form diagnostic");
     failures += expect_string(buffers.diagnostics[0].message, "WriteChar is a virtual Irvine32 routine and must be called with CALL WriteChar.", "Bare WriteChar diagnostic should state the supported source form");
 
-    failures += expect_parser_status(parse_for_test(deferred_write_string, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "WriteString CALL should remain deferred after Phase 88");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "WriteString CALL should keep Irvine32 deferred diagnostic");
+    failures += expect_parser_status(parse_for_test(accepted_writestring, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 89 WriteString CALL should parse after Irvine32 include");
+    failures += expect_size(result.diagnostic_count, 0U, "accepted WriteString CALL should not emit diagnostics");
+    failures += expect_size(result.instruction_count, 1U, "accepted WriteString source should emit one WriteString instruction");
+    if (result.instruction_count >= 1U) {
+        failures += expect_u32((uint32_t)buffers.instructions[0].opcode, (uint32_t)VM_IR_OPCODE_IRVINE32_WRITESTRING, "call WriteString should lower to the WriteString IR opcode");
+    }
+
+    failures += expect_parser_status(parse_for_test(writestring_without_include, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL WriteString without Irvine32 include should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_MISSING_IRVINE32_INCLUDE, "CALL WriteString without include should use the missing Irvine32 include diagnostic");
+    failures += expect_string(buffers.diagnostics[0].message, "CALL WriteString requires INCLUDE Irvine32.inc before WriteString can be used as a virtual Irvine32 routine.", "CALL WriteString without include diagnostic should give the exact required fix");
+
+    failures += expect_parser_status(parse_for_test(bare_writestring, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Bare WriteString form should be invalid after Phase 89");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_CALL_FORM, "Bare WriteString should use the invalid Irvine32 call-form diagnostic");
+    failures += expect_string(buffers.diagnostics[0].message, "WriteString is a virtual Irvine32 routine and must be called with CALL WriteString.", "Bare WriteString diagnostic should state the supported source form");
+
+    failures += expect_parser_status(parse_for_test(invoke_writestring, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "INVOKE WriteString should remain deferred after Phase 89");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE_INVOKE, "INVOKE WriteString should keep Irvine32 INVOKE deferred diagnostic");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "deferred", "INVOKE WriteString diagnostic should still say deferred");
 
     return failures;
 }
@@ -8947,6 +8986,6 @@ int main(void) {
         return 1;
     }
 
-    printf("Parser tests through Phase 88 Irvine32 WriteChar coverage passed.\n");
+    printf("Parser tests through Phase 89 Irvine32 WriteString coverage passed.\n");
     return 0;
 }

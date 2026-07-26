@@ -154,6 +154,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_IRVINE32_CRLF,
     /// Append the low byte of AL to Program Console for virtual Irvine32 `WriteChar`.
     VM_IR_OPCODE_IRVINE32_WRITECHAR,
+    /// Append the null-terminated byte string addressed by EDX for virtual Irvine32 `WriteString`.
+    VM_IR_OPCODE_IRVINE32_WRITESTRING,
     /// Number of currently supported operation codes.
     VM_IR_OPCODE_COUNT
 } VmIrOpcode;

@@ -18,16 +18,26 @@ Recent milestone detail in this file may be listed most-recent-first for handoff
 The canonical implementation order, phase numbering, phase tasks, required tests, and acceptance criteria remain in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Future assistants must not infer phase dependencies or next implementation work from the order of recent-history paragraphs in this file when the guide states a different order.
 
 Latest recorded completed milestone in this history file:
-Phase 88 - Irvine32 WriteChar
+Phase 89 - Irvine32 WriteString
 
 Latest recorded runtime/source-run MASM behavior phase in this history file:
-Phase 88 - Irvine32 WriteChar
+Phase 89 - Irvine32 WriteString
 
 This history file records completed milestones and audit evidence. It is not the phase-order authority and not a replacement for `docs/FULL_IMPLEMENTATION_SPEC.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, `docs/SUPPORTED_SYNTAX.md`, current repository code, or current tests. If this history file is not updated during a later milestone, its `latest recorded` lines may be older than the active repository state. Use the implementation guide and latest accepted milestone evidence to determine the next canonical implementation phase.
 
-Forward-looking phase navigation is guide-owned. At the time this history entry was updated, Phase 88 had been implemented as virtual Irvine32 `WriteChar` Program Console output while preserving Phase 87 virtual Irvine32 `Crlf` Program Console output while preserving Phase 86 Program Console output-limit and serialization infrastructure while preserving Phase 85 separate Program Console stream infrastructure, Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering, Phase 83 helper-level ADDR preparation, and Phase 82 zero-argument `INVOKE` behavior. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
+Forward-looking phase navigation is guide-owned. At the time the Phase 88 history entry was updated, Phase 88 had been implemented as virtual Irvine32 `WriteChar` Program Console output while preserving Phase 87 virtual Irvine32 `Crlf` Program Console output while preserving Phase 86 Program Console output-limit and serialization infrastructure while preserving Phase 85 separate Program Console stream infrastructure, Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering, Phase 83 helper-level ADDR preparation, and Phase 82 zero-argument `INVOKE` behavior. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
 
 Corrective artifact-evidence note for Phase 71B: the latest Phase 71B repository archive's checked-in `web/dist/masm32_sim_core.wasm` contains `phase-71b-source-run-output-contract-v1`. This corrects the stale artifact-token warning preserved in `docs/history/reports/Milestone 71B report.md`, which stated that the checked-in Wasm still contained the earlier Phase 71A output-contract token. The historical report should remain period evidence unless the project owner explicitly requests historical report correction, but future audits should treat the archive's artifact-content scan as the stronger evidence for the checked-in Wasm token.
+
+## Phase 89 - Irvine32 WriteString
+
+Phase 89 implements the focused virtual Irvine32 `WriteString` routine. With `INCLUDE Irvine32.inc`, direct `call WriteString` reads `EDX` as a simulated VM address of a null-terminated byte string, scans the string through checked VM memory helpers, and appends the nonzero bytes before the terminator to Program Console. The null terminator is read but not printed.
+
+`WriteString` preserves all modeled registers, including `EDX`, preserves modeled flags and flag-validity metadata, writes no simulated memory, and creates no memory-change rows. Fatal checked-memory failures, strict uninitialized-read diagnostics, Program Console byte/line limit failures, and `string-scan-limit-exceeded` failures append no candidate bytes from the failing `WriteString` call while preserving previously committed Program Console output. Default warning-mode uninitialized reads emit Simulator Messages warnings only when the call succeeds.
+
+Phase 89 also updates runtime/source-run metadata to `phase-89-irvine32-writestring-contract-v1`, updates the browser default program to demonstrate `WriteString`, and keeps future-owned Irvine32 behavior deferred. `INVOKE WriteString`, `INVOKE WriteChar`, numeric output routines, input routines, macros, WinAPI behavior, PE loading, linking, host console I/O, filesystem behavior, native execution, and full x86 emulation remain future-owned or permanent non-goals according to the canonical specification and guide.
+
+This milestone-history entry is implementation history. If a future assistant finds a conflict between this entry and the active canonical `FULL_IMPLEMENTATION_SPEC.md` or `INCREMENTAL_IMPLEMENTATION_GUIDE.md`, the active spec and guide control.
 
 
 ## Phase 88 - Irvine32 WriteChar
