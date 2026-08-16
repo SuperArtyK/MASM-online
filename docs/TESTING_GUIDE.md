@@ -6,7 +6,15 @@ The examples assume commands are run from the repository root.
 
 Current milestone:
 
+- Phase 89A - Irvine32 Active Documentation and Static Status Guardrails
+
+Runtime/source-run MASM behavior phase:
+
 - Phase 89 - Irvine32 WriteString
+
+Phase 89A updates active documentation and static validation only; runtime/source-run behavior, diagnostics, Program Console output, Simulator Messages, and the Phase 89 output contract remain unchanged.
+
+## Current regression coverage
 
 Phase 89 regression coverage verifies virtual Irvine32 `WriteString` source-run Program Console string output from the null-terminated simulated-memory byte string at `EDX`, checked-memory reads, no-partial-output fatal failures, scan-limit diagnostics, uninitialized-read warning/strict behavior, exact missing-include and bare-form diagnostics for direct `CALL WriteString`, continued deferral of `INVOKE WriteString`, and the current output-contract token `phase-89-irvine32-writestring-contract-v1`.
 
@@ -1423,7 +1431,52 @@ For Phase 71A root RET mode, Phase 71C code-stream fallthrough, Phase 71D proced
 - rendered Simulator Messages show root RET completion exactly once;
 - rendered Simulator Messages for non-entry fallthrough include `procedure-fell-through`;
 - static documentation checks assert selected-entry root RET default success, optional strict root RET rejection, and called non-entry procedure fallthrough are implemented after Phase 71A is accepted;
-- static documentation checks continue to list RETF, `OFFSET local`, scaled-index LOCAL addressing, QWORD/SQWORD executable LOCAL memory operands, general procedure-frame features beyond Phase 84 limited INVOKE DWORD arguments, Phase 83 helper-level ADDR preparation, Phase 82 zero-argument INVOKE, and Phase 80 LOCAL operand access, executable `PROTO` behavior beyond Phase 84 validation, unsupported `INVOKE` argument forms, pointer or unnamed prototype parameters, VARARG, executable source-level ADDR outside accepted INVOKE arguments, calling-convention behavior, and Irvine32 callable routine dispatch as deferred unless later phases implement them, while verifying that Phase 73 `LEAVE`, Phase 74 `RET imm16`, Phase 76 `PROC USES` parsing metadata, Phase 77 `PROC USES` runtime save/restore, Phase 78 `LOCAL` declaration metadata, Phase 79 automatic LOCAL frame allocation/lifetime, Phase 80 supported LOCAL operand resolution/addressing, Phase 81 limited `PROTO` metadata, Phase 82 zero-argument same-file user-procedure `INVOKE`, Phase 83 helper-level `ADDR symbol` record preparation, and Phase 84 limited same-file user-procedure INVOKE DWORD argument lowering are documented as implemented. The same checks should reject stale active fixed-layout examples that cite stack top `0x00800000` instead of the current fixed-layout stack top `0x00900000`, except inside historical files, explicit stale-value allowlists, or audit-only draft text.
+- Static documentation checks must continue to classify RETF; `OFFSET local`; scaled-index LOCAL addressing; QWORD/SQWORD executable LOCAL memory operands; general procedure-frame behavior beyond Phase 84 limited user-procedure `INVOKE` DWORD arguments; executable `PROTO` behavior beyond Phase 84 validation; unsupported user-procedure `INVOKE` argument forms; pointer or unnamed prototype parameters; `VARARG`; executable source-level `ADDR` outside accepted `INVOKE` arguments; and calling-convention behavior as deferred until an accepted phase implements the exact feature. The same checks must verify that Phase 73 `LEAVE`, Phase 74 `RET imm16`, Phase 76 `PROC USES` parsing metadata, Phase 77 `PROC USES` runtime save/restore, Phase 78 `LOCAL` declaration metadata, Phase 79 automatic LOCAL frame allocation/lifetime, Phase 80 supported LOCAL operand resolution/addressing, Phase 81 limited `PROTO` metadata, Phase 82 zero-argument same-file user-procedure `INVOKE`, Phase 83 helper-level `ADDR symbol` record preparation, and Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering are documented as implemented. For Irvine32, the checks must classify virtual `exit`, direct `CALL Crlf`, zero-argument `INVOKE Crlf`, direct `CALL WriteChar`, and direct `CALL WriteString` after `INCLUDE Irvine32.inc` as implemented in the Phase 89 repository state. They must classify `INVOKE WriteChar`, `INVOKE WriteString`, numeric output routines, debug routines, memory-dump routines, input routines, random routines, file routines, and every other unimplemented exact Irvine32 source form as deferred. They must classify WinAPI execution or modeling, PE loading/linking, object-file or import-library linking, external native-library execution, host callbacks, host filesystem access by simulated programs, native process behavior, Windows process emulation, and full x86 emulation as permanent product non-goals rather than ordinary deferred Irvine32 work. The same checks must reject stale active fixed-layout examples that cite stack top `0x00800000` instead of the current fixed-layout stack top `0x00900000`, except inside files explicitly classified as historical, explicit stale-value test fixtures, or audit-only draft text.
+
+- Phase 89A Irvine32 active-status guardrail fixtures must use explicit file-role classification and the following outcome matrix. A fixture passes or fails because of its assigned role and content condition, not because a stale sentence was individually allowlisted.
+
+  | Fixture role | Fixture content condition | Required result |
+  |---|---|---|
+  | Active current-status file | Consistently lists virtual `Crlf`, direct `WriteChar`, and direct `WriteString` as implemented after `INCLUDE Irvine32.inc` | Pass |
+  | Active current-status file | Correct opening paragraph, but a later current capability inventory lists only `Crlf` and `WriteChar` | Fail |
+  | Active current-status file | Omits direct `WriteString` from a current implemented-routine inventory while naming `Crlf` and `WriteChar` | Fail |
+  | Active current-status file | Uses different punctuation, case, Markdown formatting, routine order, or surrounding prose while preserving the same stale meaning | Fail |
+  | Active current-status file | Lists direct `CALL WriteString` as implemented and separately lists `INVOKE WriteString` as deferred | Pass |
+  | Active current-status file | Implies that direct `CALL WriteString` also implements `INVOKE WriteString` | Fail |
+  | Active current-status file | Lists direct `CALL WriteString` in a generic deferred direct-call table after Phase 89 | Fail |
+  | Active current-status file | Separates future Irvine32 routines from permanent WinAPI/PE/linker/host/native-process/full-x86 non-goals | Pass |
+  | Active current-status file | Combines future Irvine32 routines and permanent non-goals into one ambiguous ordinary-roadmap category | Fail |
+  | Historical Phase 87 file | Accurately lists only `Crlf` for that historical state | Pass |
+  | Historical Phase 88 file | Accurately lists `Crlf` and `WriteChar` for that historical state | Pass |
+  | Active metadata/protocol fixture | Implemented phase is 89 and output-contract token is exactly `phase-89-irvine32-writestring-contract-v1` | Pass |
+  | Active metadata/protocol fixture | Implemented phase and active output-contract token disagree | Fail |
+  | Future-token fixture before the future phase is implemented | The future phase token is absent from active runtime metadata | Pass; absence is expected |
+
+- The guardrail implementation may use structured Markdown parsing, normalized paragraph/list/table-row checks, or another deterministic method. Regardless of implementation strategy, it must satisfy every fixture outcome above. A check that searches only for two exact prohibited strings is insufficient.
+
+- The guardrail must evaluate every relevant paragraph, list item, and table row in an active file. Finding one correct current-status sentence must not stop validation or mask a stale sentence later in the same file.
+
+- Failure output must identify the failing fixture or active file and the smallest practical location: line number, line range, paragraph index, list item, or table row. A repository-level failure with no file or content location is insufficient.
+
+- Historical exclusion must be based on explicit file-role classification. Do not rewrite historical milestone reports, and do not maintain a sentence-by-sentence allowlist for historically accurate old capability inventories.
+
+### Phase 89A documentation/status-guardrail test execution
+
+Phase 89A implements this guardrail through `scripts/phase89a_status_guardrail.py`, the explicit manifest `tests/static/phase89a/manifest.json`, and the complete fixture set in `tests/static/phase89a/`. The current regression set also covers status supplied by a lead paragraph to a following list or table, implicit inventory wording such as `consists of` and `provides`, `Yes` status tables, same-sentence direct-CALL/INVOKE distinctions, Windows API and PE-loader wording variants, `.EXIT` directive text versus virtual zero-operand `exit`, phase-number/name/suffix drift, premature Phase 90-95 token activation, and the accepted Phase 89 default-editor source SHA-256. Run these commands from the repository root:
+
+```text
+python3 scripts/phase89a_status_guardrail.py --root . --verbose
+python3 scripts/run_tests.py --static --verbose
+python3 scripts/run_tests.py --all --quiet
+```
+
+The standalone guardrail and focused static command must pass after every completed guardrail change. The aggregate command must pass before Phase 89A is reported complete.
+
+If changed files trigger the existing default-editor source-run smoke rule, stale-artifact rule, or another explicitly documented focused check, run that required check in addition to the two commands above.
+
+If `emcc` is unavailable, record Browser/Wasm rebuild verification as skipped because the required dependency is unavailable. Do not report the rebuild as passed. Do not describe checked-in artifact/protocol tests as a substitute for rebuilding current C sources.
+
+Phase 89A adds no runtime diagnostic and no Program Console behavior. It therefore requires no new rendered Simulator Messages contract. Existing structured-diagnostic and rendered-message suites must remain green. The Phase 89A milestone report must state explicitly that the phase changed active documentation and static validation only.
 
 ## Current-status documentation clutter checks
 

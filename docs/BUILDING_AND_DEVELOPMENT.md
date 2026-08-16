@@ -13,11 +13,13 @@ Source-of-truth rule:
 
 Current milestone:
 
+- Phase 89A - Irvine32 Active Documentation and Static Status Guardrails
+
+Runtime/source-run MASM behavior phase:
+
 - Phase 89 - Irvine32 WriteString
 
-Phase 89 advances runtime/source-run behavior metadata and the source-run output-contract identifier because source-run JSON can now contain public Irvine32 `WriteString` Program Console string output copied from checked simulated memory at `EDX`. Phase 88 virtual Irvine32 `WriteChar` Program Console character output, Phase 87 virtual Irvine32 `Crlf` Program Console newline output, Phase 86 deterministic Program Console byte/line limit fields and `console-output-limit-exceeded` diagnostics, Phase 85 separate Program Console stream infrastructure, Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering with exact `ret imm16` cleanup validation, Phase 83 helper-level ADDR preparation, Phase 82 zero-argument INVOKE behavior, Phase 81 limited parser-owned `PROTO` metadata, Phase 80 LOCAL operand resolution/addressing, and Phase 79 automatic LOCAL frame behavior remain part of the public source-run behavior.
-
-This file is a build and development reference. It does not define supported MASM syntax or runtime behavior. For current syntax and diagnostics, see [`SUPPORTED_SYNTAX.md`](SUPPORTED_SYNTAX.md). For product boundaries and stable behavior rules, see [`FULL_IMPLEMENTATION_SPEC.md`](FULL_IMPLEMENTATION_SPEC.md). For phase order and acceptance criteria, see [`INCREMENTAL_IMPLEMENTATION_GUIDE.md`](INCREMENTAL_IMPLEMENTATION_GUIDE.md). For milestone history, see [`MILESTONE_HISTORY.md`](MILESTONE_HISTORY.md).
+Phase 89A updates active documentation and static validation only; runtime/source-run MASM behavior metadata and the Phase 89 WriteString output contract remain unchanged.
 
 ## Artifact verification versus rebuild verification
 

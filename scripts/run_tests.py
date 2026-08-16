@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import html
 import io
 import json
 import os
@@ -22,6 +23,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from typing import Callable, Iterable, Sequence
+
+from phase89a_status_guardrail import validate_phase89a_repository
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -325,6 +328,9 @@ def run_structure_tests() -> None:
         "tests/web/test_formatters.mjs",
         "tests/web/test_diagnostic_rendering.mjs",
         "tests/core/diagnostic_json_producer.c",
+        "scripts/phase89a_status_guardrail.py",
+        "tests/static/phase89a/manifest.json",
+        "docs/history/reports/Milestone 89A report.md",
     ])
     assert_text_contains("web/src/protocol.js", "type: \"PONG\"")
     assert_text_contains("web/src/protocol.js", "unsupported-message")
@@ -528,8 +534,10 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "Phase 84 INVOKE accepts only full 32-bit register arguments")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
+    assert_text_contains("README.md", "Phase 89A - Irvine32 Active Documentation and Static Status Guardrails")
+    assert_text_contains("README.md", "Runtime/source-run MASM behavior phase")
     assert_text_contains("README.md", "Phase 89 - Irvine32 WriteString")
-    assert_text_contains("README.md", "Phase 89 is the current runtime/source-run behavior milestone")
+    assert_text_contains("README.md", "Phase 89A updates active documentation and static validation only; runtime/source-run MASM behavior remains Phase 89.")
     assert_text_not_contains("README.md", "parser-only `LOCAL` declaration metadata")
     assert_text_not_contains("README.md", "runtime stack-frame creation for locals")
     assert_text_contains("README.md", "callDepthLimit")
@@ -616,6 +624,11 @@ def run_structure_tests() -> None:
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 89")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
     assert_text_contains("web/src/protocol.js", "Phase 89 - Irvine32 WriteString")
+    assert_text_contains("scripts/phase89a_status_guardrail.py", "@file phase89a_status_guardrail.py")
+    assert_text_contains("scripts/phase89a_status_guardrail.py", "def validate_phase89a_repository")
+    assert_text_contains("tests/static/phase89a/manifest.json", "negative_stale_later_inventory.md")
+    assert_text_contains("docs/history/reports/Milestone 89A report.md", "Phase 89A is a documentation and static-validation corrective milestone")
+    assert_text_contains("docs/history/reports/Milestone 89A report.md", "aggregate completed and passed")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -1080,6 +1093,89 @@ def run_source_run_subgroup_tests(subgroup_name: str) -> None:
     run_command([str(output), "--group", family_name], subgroup=subgroup_name)
 
 
+def extract_default_editor_source() -> str:
+    """Extract and HTML-decode the exact browser default editor source.
+
+    Returns:
+        Source text exposed by the default editor textarea.
+    """
+
+    index_text = (ROOT / "web/index.html").read_text(encoding="utf-8")
+    match = re.search(r'<textarea\s+id="editor"[^>]*>(.*?)</textarea>', index_text, flags=re.DOTALL)
+    if match is None:
+        raise TestFailure('web/index.html is missing the default <textarea id="editor"> source')
+    return html.unescape(match.group(1))
+
+
+def assert_default_editor_source_run_smoke() -> None:
+    """Run the exact browser default source through the native source-run API."""
+
+    build_diagnostic_json_producer()
+    producer = executable_output_path("diagnostic_json_producer")
+    source = extract_default_editor_source()
+    completed = subprocess.run(
+        [str(producer)],
+        cwd=ROOT,
+        input=source,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise TestFailure(
+            "default-editor source-run producer failed\n"
+            f"- Command: {producer}\n"
+            f"- Exit code: {completed.returncode}\n"
+            f"- Stdout tail:\n{tail_text(completed.stdout).rstrip()}\n"
+            f"- Stderr tail:\n{tail_text(completed.stderr).rstrip()}"
+        )
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise TestFailure(f"default-editor source-run returned invalid JSON: {error}") from error
+
+    expected_values = {
+        "phase": 89,
+        "phaseSuffix": "",
+        "phaseName": "Phase 89 - Irvine32 WriteString",
+        "sourceRunOutputContract": "phase-89-irvine32-writestring-contract-v1",
+        "ok": True,
+        "status": "ok",
+    }
+    for key, expected in expected_values.items():
+        actual = payload.get(key)
+        if actual != expected:
+            raise TestFailure(
+                f"default-editor source-run field {key!r} expected {expected!r} but found {actual!r}"
+            )
+
+    program_console = payload.get("programConsole")
+    if not isinstance(program_console, dict) or program_console.get("text") != "Hello from WriteString\n":
+        raise TestFailure("default-editor source-run must produce exactly 'Hello from WriteString\n' in Program Console")
+    simulator_messages = payload.get("simulatorMessages")
+    if not isinstance(simulator_messages, list):
+        raise TestFailure("default-editor source-run must keep Simulator Messages as a separate list")
+    forbidden_codes = {
+        "unsupported-feature",
+        "unsupported-irvine32-routine",
+        "unsupported-irvine-invoke",
+        "parser-error",
+        "runtime-error",
+        "code-fell-off-end",
+    }
+    message_codes = {
+        message.get("code")
+        for message in simulator_messages
+        if isinstance(message, dict) and isinstance(message.get("code"), str)
+    }
+    unexpected = sorted(forbidden_codes.intersection(message_codes))
+    if unexpected:
+        raise TestFailure("default-editor source-run emitted forbidden Simulator Messages: " + ", ".join(unexpected))
+    if "execution-complete" not in message_codes:
+        raise TestFailure("default-editor source-run did not emit execution-complete")
+
+
 def run_source_run_tests() -> None:
     """Compile and run complete native source-run integration coverage."""
 
@@ -1087,6 +1183,7 @@ def run_source_run_tests() -> None:
     for subgroup_name in SOURCE_RUN_SUBGROUPS:
         family_name = subgroup_name[len("source-run-"):]
         run_command([str(output), "--group", family_name], subgroup=subgroup_name)
+    assert_default_editor_source_run_smoke()
 
 
 def build_diagnostic_json_producer() -> None:
@@ -1788,7 +1885,7 @@ def assert_phase71b2_stale_milestone_context_checks() -> None:
 
 
 def assert_current_status_and_harness_documented() -> None:
-    """Verify Phase 77 status, concise status surfaces, and harness documentation wording."""
+    """Verify Phase 89A status, concise status surfaces, and harness documentation wording."""
 
     def read_repo_text(path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
@@ -1809,7 +1906,7 @@ def assert_current_status_and_harness_documented() -> None:
         [
             "Current milestone",
             "Phase 89 - Irvine32 WriteString",
-            "Phase 89 is the current runtime/source-run behavior milestone",
+            "Phase 89A updates active documentation and static validation only; runtime/source-run MASM behavior remains Phase 89.",
             "stack-overflow",
             "stack-underflow",
             "source-level 32-bit `push` for registers, immediates, and DWORD memory sources",
@@ -1878,9 +1975,7 @@ def assert_current_status_and_harness_documented() -> None:
         [
             "Current milestone:",
             "Phase 89 - Irvine32 WriteString",
-            "Phase 89 advances runtime/source-run behavior metadata",
-            "Phase 81 limited parser-owned `PROTO` metadata",
-            "exact `ret imm16` cleanup validation",
+            "Phase 89A updates active documentation and static validation only; runtime/source-run MASM behavior metadata and the Phase 89 WriteString output contract remain unchanged.",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
             "stale-wasm-output-contract",
@@ -1926,9 +2021,10 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Current milestone:",
+            "Phase 89A - Irvine32 Active Documentation and Static Status Guardrails",
+            "Runtime/source-run MASM behavior phase:",
             "Phase 89 - Irvine32 WriteString",
             "direct virtual Irvine32 `WriteString` are executable in the current subset after `INCLUDE Irvine32.inc`",
-            "Phase 86 added deterministic Program Console byte/line limits",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
             "Phase 79 allocates runtime stack storage for accepted LOCAL metadata",
             "selected-entry `ENDP` is not an implicit successful terminator",
@@ -1946,8 +2042,6 @@ def assert_current_status_and_harness_documented() -> None:
             "Optional strict root RET mode rejects root-code-stream `RET` with `root-ret-disallowed-by-mode`",
             "Called helper procedure fallthrough while a helper return token is pending is mapped to `procedure-fell-through`",
             "The selected-entry `ENDP` success rule from pre-71C accepted behavior is no longer the default",
-            "Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form",
-            "they are not future work merely because they are currently rejected",
             "External/API calls are not simulator-owned deferred CALL forms",
             "| `the-front-fell-off` | 71D implemented | notice, required easter egg | Harmless notice emitted only after `code-fell-off-end` when the responsible procedure name is exactly `front` under ASCII case-insensitive comparison. |",
             "| `procedure-fell-through` | 71D implemented | warning by default; configurable `off`/`warn`/`error` |",
@@ -1982,7 +2076,7 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 89 - Irvine32 WriteString",
+            "Phase 89A - Irvine32 Active Documentation and Static Status Guardrails",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
             "Phase 89 - Irvine32 WriteString",
             "phase-71e-entry-procedure-end-mode-output-contract-v1",
@@ -2159,6 +2253,8 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
+            "Phase 89A - Irvine32 Active Documentation and Static Status Guardrails",
+            "Runtime/source-run MASM behavior phase:",
             "Phase 89 - Irvine32 WriteString",
             "Phase 79 adds tests for automatic LOCAL frame setup and release",
             "phase-89-irvine32-writestring-contract-v1",
@@ -2191,7 +2287,7 @@ def assert_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 89: Irvine32 WriteString",
+            "Milestone 89A: Irvine32 Active Documentation and Static Status Guardrails",
             "INCLUDE Irvine32.inc",
                                                                         "exit",
             "final-registers",
@@ -2861,6 +2957,14 @@ def assert_wasm_source_run_vm_storage_off_stack() -> None:
     if "\n    Vm vm;" in body:
         raise TestFailure("source-run Wasm API must not allocate Vm on the Wasm call stack")
 
+def assert_phase89a_status_guardrails() -> None:
+    """Run Phase 89A role-aware documentation and metadata guardrails."""
+
+    failures = validate_phase89a_repository(ROOT, verbose=VERBOSE_OUTPUT)
+    if failures:
+        raise TestFailure("Phase 89A status guardrail failed:\n" + "\n".join(f"- {failure}" for failure in failures))
+
+
 def run_static_tests() -> None:
     """Run runner, documentation, and fixture-inventory consistency checks."""
 
@@ -2879,6 +2983,7 @@ def run_static_tests() -> None:
     assert_live_text_avoids_milestone_relative_wording()
     assert_phase71b2_stale_milestone_context_checks()
     assert_current_status_and_harness_documented()
+    assert_phase89a_status_guardrails()
     assert_phase71f_fallthrough_fixture_migration_checks()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()

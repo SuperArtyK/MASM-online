@@ -18,7 +18,7 @@ Recent milestone detail in this file may be listed most-recent-first for handoff
 The canonical implementation order, phase numbering, phase tasks, required tests, and acceptance criteria remain in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Future assistants must not infer phase dependencies or next implementation work from the order of recent-history paragraphs in this file when the guide states a different order.
 
 Latest recorded completed milestone in this history file:
-Phase 89 - Irvine32 WriteString
+Phase 89A - Irvine32 Active Documentation and Static Status Guardrails
 
 Latest recorded runtime/source-run MASM behavior phase in this history file:
 Phase 89 - Irvine32 WriteString
@@ -28,6 +28,16 @@ This history file records completed milestones and audit evidence. It is not the
 Forward-looking phase navigation is guide-owned. At the time the Phase 88 history entry was updated, Phase 88 had been implemented as virtual Irvine32 `WriteChar` Program Console output while preserving Phase 87 virtual Irvine32 `Crlf` Program Console output while preserving Phase 86 Program Console output-limit and serialization infrastructure while preserving Phase 85 separate Program Console stream infrastructure, Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering, Phase 83 helper-level ADDR preparation, and Phase 82 zero-argument `INVOKE` behavior. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
 
 Corrective artifact-evidence note for Phase 71B: the latest Phase 71B repository archive's checked-in `web/dist/masm32_sim_core.wasm` contains `phase-71b-source-run-output-contract-v1`. This corrects the stale artifact-token warning preserved in `docs/history/reports/Milestone 71B report.md`, which stated that the checked-in Wasm still contained the earlier Phase 71A output-contract token. The historical report should remain period evidence unless the project owner explicitly requests historical report correction, but future audits should treat the archive's artifact-content scan as the stronger evidence for the checked-in Wasm token.
+
+## Phase 89A - Irvine32 Active Documentation and Static Status Guardrails
+
+Phase 89A corrects active current-status wording and adds deterministic static validation for the Phase 89 Irvine32 capability matrix. The guardrail uses explicit active, historical, metadata, and future-token fixture roles; scans every bounded relevant paragraph, list item, and table row; normalizes non-semantic Markdown and case variation; and reports the failing file and smallest practical line location.
+
+The active Phase 89 matrix remains unchanged: virtual `exit`, direct `CALL Crlf`, zero-argument `INVOKE Crlf`, direct `CALL WriteChar`, and direct `CALL WriteString` are implemented after `INCLUDE Irvine32.inc`; `INVOKE WriteChar`, `INVOKE WriteString`, and later Irvine32 routine families remain deferred; WinAPI, PE/linker, host, native-process, Windows-process, and full-x86 behavior remain permanent product non-goals.
+
+Phase 89A is documentation and static-validation work only. Runtime/source-run MASM behavior metadata remains `Phase 89 - Irvine32 WriteString`, and the source-run output-contract token remains `phase-89-irvine32-writestring-contract-v1`. No parser, VM, executor, checked-memory, Program Console, Simulator Messages runtime, source-run schema, Wasm API, worker protocol, browser interaction, or compiled-artifact behavior changes in this milestone.
+
+The historical `docs/history/reports/Milestone 89 report.md` remains unchanged, including its inaccurate contemporaneous Phase 89A disposition. The separate `docs/history/reports/Milestone 89A report.md` records the corrective implementation and test evidence.
 
 ## Phase 89 - Irvine32 WriteString
 
@@ -39,6 +49,16 @@ Phase 89 also updates runtime/source-run metadata to `phase-89-irvine32-writestr
 
 This milestone-history entry is implementation history. If a future assistant finds a conflict between this entry and the active canonical `FULL_IMPLEMENTATION_SPEC.md` or `INCREMENTAL_IMPLEMENTATION_GUIDE.md`, the active spec and guide control.
 
+
+### Corrective Phase 89A audit origin
+
+A later project-wide audit found that the historical Milestone 89 report line `Phase 89A disposition: satisfied during Phase 89` does not match the audited active repository state. Phase 89 implemented and tested direct virtual Irvine32 `WriteString` runtime/source-run behavior. However, several active `docs/SUPPORTED_SYNTAX.md` capability inventories still omitted direct `WriteString`, and the existing static checks did not reject those stale wording variants.
+
+The historical Milestone 89 report must remain unchanged. Milestone reports record the implementation and conclusions asserted at the time; they do not override the canonical full specification or implementation guide and must not be silently rewritten as if their original wording had been different.
+
+Under the canonical guide, separate corrective Phase 89A was required before Phase 90. Its scope was limited to active documentation/status wording, static documentation/status validation, focused fixtures, tests for those guardrails, and current milestone navigation. It did not add or change MASM syntax, parser behavior, VM behavior, Irvine32 runtime behavior, Program Console behavior, Simulator Messages runtime behavior, memory behavior, source-run schema, Wasm API behavior, browser interaction behavior, or output-contract tokens.
+
+The completed Phase 89A entry above and the separate `docs/history/reports/Milestone 89A report.md` record the corrective implementation. This audit-origin note remains to explain why the non-renumbering phase was required and why the historical Milestone 89 report was not rewritten.
 
 ## Phase 88 - Irvine32 WriteChar
 

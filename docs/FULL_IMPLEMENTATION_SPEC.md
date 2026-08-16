@@ -31,6 +31,8 @@ This specification is the product-behavior authority. It defines stable simulato
 
 Short active status surfaces are orientation aids only. They may identify the latest accepted project milestone and, when needed, the latest runtime/source-run MASM behavior phase. They must not become changelogs, milestone ledgers, phase reports, test transcripts, output-contract summaries, artifact-policy summaries, next-phase planning notes, or maintainer instructions. User-facing orientation documents must not display process text such as instructions to replace a status table, avoid appending a second status block, avoid adding command transcripts, or avoid adding changed-file lists. Those editing rules belong in the implementation guide, not in the visible status surface.
 
+Active capability inventories must account for every implemented exact source form they purport to summarize. An inventory that names the implemented Irvine32 output set must distinguish direct `CALL` forms from `INVOKE` forms, must not omit an already implemented routine from a current set, and must keep future simulator work separate from permanent product-boundary non-goals. Historical reports may preserve historically accurate older inventories because their file role is historical rather than active current status.
+
 The visible `web/index.html` top-page milestone banner is the compact browser landing-page status surface. It must use this form:
 
 ```text
@@ -4127,7 +4129,7 @@ WriteDec:
   Preserve all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
   Write no simulated memory.
   Write no Simulator Messages on success except non-program-output diagnostics required by active policy.
-  Implementing WriteDec must not implement WriteInt, WriteHex, WriteBin, WriteString INVOKE, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation.
+  Implementing WriteDec must not implement WriteInt, WriteHex, WriteBin, INVOKE WriteString, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation.
 
 WriteInt:
   Future-owned until Phase 91 or a later accepted replacement phase implements it.
@@ -4148,7 +4150,7 @@ WriteInt:
   Preserve all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
   Write no simulated memory.
   Write no Simulator Messages on success except non-program-output diagnostics required by active policy.
-  Implementing WriteInt must not implement WriteDec, WriteHex, WriteBin, WriteString INVOKE, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation.
+  Implementing WriteInt must not implement WriteDec, WriteHex, WriteBin, INVOKE WriteString, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation.
 
 WriteHex:
   Future-owned until Phase 92 or a later accepted replacement phase implements it.
@@ -4167,7 +4169,7 @@ WriteHex:
   Preserve all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
   Write no simulated memory.
   Write no Simulator Messages on success except non-program-output diagnostics required by active policy.
-  Implementing WriteHex must not implement WriteDec, WriteInt, WriteBin, WriteString INVOKE, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation.
+  Implementing WriteHex must not implement WriteDec, WriteInt, WriteBin, INVOKE WriteString, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation.
 
 WriteBin:
   Future-owned until Phase 93 or a later accepted replacement phase implements it.
@@ -4186,7 +4188,7 @@ WriteBin:
   Preserve all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
   Write no simulated memory.
   Write no Simulator Messages on success except non-program-output diagnostics required by active policy.
-  Implementing WriteBin must not implement WriteDec, WriteInt, WriteHex, WriteString INVOKE, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation.
+  Implementing WriteBin must not implement WriteDec, WriteInt, WriteHex, INVOKE WriteString, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation.
 ```
 
 `DumpRegs` and `DumpMem` are future-owned until their guide phases explicitly implement them. Their names must not be used as permission to infer Irvine32, MASM32, Windows, debugger, PE/linker, host, or full-x86 behavior.
@@ -6228,21 +6230,60 @@ The rendered Simulator Messages form must preserve the existing renderer format:
 [<category>] <code> line <line>, column <column>, byte offset <byte-offset>, span length <span-length>: <exact primary message text>
 ```
 
-The following diagnostics remain `unsupported-feature` unless a later accepted phase implements the named routine or source form. Direct `CALL Crlf`, zero-argument `INVOKE Crlf`, direct `CALL WriteChar`, and direct `CALL WriteString` after `INCLUDE Irvine32.inc` are implemented and are not part of this deferred table in the Phase 89-complete repository state.
+### Irvine32 implemented forms, invalid forms, deferred forms, and permanent non-goals
 
-| Source condition | Category | Code | Rationale |
+This subsection owns stable diagnostic-classification rules. It does not own the latest completed milestone number or the current list of implemented Irvine32 routines.
+
+For this subsection:
+
+- **Exact source form** means the combination of routine name and invocation syntax, such as direct `CALL WriteString`, zero-argument `INVOKE Crlf`, or `INVOKE WriteString`.
+- **Implemented form** means an exact source form that the canonical implementation guide assigns to a completed phase and that the current implementation, tests, and active supported-syntax reference all identify as executable.
+- **Invalid use of an implemented form** means that the routine/form exists, but the source violates its include-order, argument-count, source-shape, runtime-input, memory, or resource-limit contract.
+- **Deferred form** means simulator-owned behavior that is recognized but not executable until an accepted future phase implements that exact form.
+- **Permanent non-goal** means behavior outside the simulator product boundary. A permanent non-goal is not ordinary scheduled follow-on work merely because it is unsupported.
+
+Current implemented Irvine32 forms must be listed in `docs/SUPPORTED_SYNTAX.md` and owned phase-by-phase by `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Historical milestone reports may describe older implemented sets. This stable specification must not embed a latest-completed phase label in this subsection.
+
+Classify Irvine32-related source in the following order:
+
+1. Determine the exact routine name and exact invocation form written by the user.
+2. If that exact form is implemented, apply the form-specific source and runtime contract from its owning phase. Invalid use of an implemented form must use the form-specific `assembly-error`, `runtime-error`, `resource-limit-error`, or warning diagnostic. Do not use a generic deferred-form code for misuse of an implemented form.
+3. If the routine is recognized but the exact direct-`CALL` form is not implemented, report `unsupported-feature` with code `unsupported-irvine32-routine`, unless another accepted contract defines a more specific diagnostic for that exact form.
+4. If the routine is recognized but the exact Irvine32 `INVOKE` form is not implemented, report `unsupported-feature` with code `unsupported-irvine-invoke`, unless an accepted phase implements that exact `INVOKE` form.
+5. If the source requests behavior outside the simulator product boundary, use the applicable unsupported/non-goal diagnostic. Do not classify product-boundary behavior as ordinary deferred Irvine32 routine work.
+
+| Source condition | Required category | Required code | Required interpretation |
 |---|---|---|---|
-| `CALL WriteDec`, `CALL WriteInt`, `CALL WriteHex`, `CALL WriteBin`, or another recognized but not yet implemented Irvine32 routine call other than implemented `Crlf`, `WriteChar`, and `WriteString` forms | `unsupported-feature` | `unsupported-irvine32-routine` | The routine body is recognized but intentionally not executable yet in the Phase 89-complete repository state. |
-| `INVOKE WriteString`, `INVOKE WriteChar`, or another recognized but not yet implemented Irvine32 routine through `INVOKE` | `unsupported-feature` | `unsupported-irvine-invoke` | Irvine32 `INVOKE` dispatch for that routine remains future-owned unless a later accepted phase explicitly implements that exact source form. |
-| External/API, WinAPI, CRT, MASM32 runtime, include-library, object-linking, PE-loader, host-callback, host-filesystem, native-process, or full-x86 behavior | `unsupported-feature` or a more specific unsupported/non-goal code | Existing or future unsupported/non-goal code | The behavior is outside the current simulator boundary or outside the v1 product boundary. These behaviors must not be treated as ordinary deferred Irvine32 routine work. |
+| Invalid use of an exact Irvine32 form that is already implemented | The category defined by the owning form contract: `assembly-error`, `runtime-error`, `resource-limit-error`, or `warning` | The form-specific code defined by the owning phase | The routine/form exists. The diagnostic describes the actual invalid source or runtime condition and must not imply that the form is unimplemented. |
+| Direct `CALL` to a recognized Irvine32 routine whose exact direct-call form is not implemented | `unsupported-feature` | `unsupported-irvine32-routine` | The name is recognized, but this exact direct-call form is intentionally non-executable in the current accepted repository state. |
+| `INVOKE` of a recognized Irvine32 routine whose exact `INVOKE` form is not implemented | `unsupported-feature` | `unsupported-irvine-invoke` | Irvine32 `INVOKE` support is exact-form-specific. A direct-call implementation does not implement the corresponding `INVOKE` form. |
+| WinAPI execution or modeling; PE loading or linking; object-file or import-library linking; external native-library execution; host callbacks; host filesystem access by simulated programs; native process behavior; Windows process emulation; or full x86 emulation | `unsupported-feature` or the more specific existing product-boundary category | The existing or future product-boundary code explicitly assigned to that behavior | The requested behavior is outside the simulator boundary or an explicit product non-goal. It is not an ordinary later Irvine32 routine milestone. |
 
-When a future phase implements one routine or one source form from a previously deferred family, only that implemented slice moves out of the generic unsupported path. Future-owned siblings must remain deferred. For example, implementing `Crlf`, direct `CALL WriteChar`, and direct `CALL WriteString` must not make numeric output, input routines, macros, WinAPI behavior, linking, `INVOKE WriteChar`, `INVOKE WriteString`, or general Irvine32 `INVOKE` dispatch executable.
+Implementing one exact Irvine32 form changes only that form. It must not implicitly enable:
 
-Phase 89 implementation status: direct `CALL WriteString` after `INCLUDE Irvine32.inc` is implemented and must not appear in the deferred direct-call row. `CALL WriteString` without `INCLUDE Irvine32.inc` is documented as `assembly-error missing-irvine32-include`. Bare `WriteString` after include is documented as `assembly-error invalid-irvine32-call-form`. `INVOKE WriteString` remains in the `unsupported-irvine-invoke` row unless a later accepted phase explicitly implements that exact `INVOKE` source form.
+- a sibling Irvine32 routine;
+- the corresponding `INVOKE` form;
+- a macro wrapper;
+- a user-procedure form with the same spelling;
+- an external library or import-library call;
+- WinAPI behavior;
+- PE or object-file loading/linking;
+- host callbacks or host filesystem behavior;
+- native-process, Windows-process, or full-x86 behavior.
 
-A future phase that implements one Irvine32 routine source form changes only that exact source form. For example, implementing direct `CALL WriteString` after `INCLUDE Irvine32.inc` must not make `INVOKE WriteString`, `WriteDec`, `WriteInt`, `WriteHex`, `WriteBin`, Irvine32 input routines, Irvine32 debug routines, Irvine32 random routines, Irvine32 file routines, Irvine32 macros, WinAPI calls, external-library calls, PE loading/linking, host callbacks, host filesystem access, native process behavior, or full x86 behavior executable. Those sibling or boundary-crossing behaviors remain deferred or unsupported until a later accepted phase explicitly changes that exact behavior and adds focused tests.
+A phase that moves one exact Irvine32 form from deferred to implemented must update all current-status surfaces and tests in the same milestone:
 
+- the owning phase requirements and acceptance criteria in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`;
+- current implemented behavior in `docs/SUPPORTED_SYNTAX.md`;
+- accepted-form and rejected-form parser/source-run tests;
+- structured diagnostics, including category, code, severity/kind, line, column, byte offset, and span length when source location is known;
+- exact rendered Simulator Messages tests for every UI-visible diagnostic path;
+- Program Console tests for every program-output path;
+- current milestone/protocol metadata and the owning phase's output-contract token when required;
+- active static-status checks that reject stale current wording;
+- a new historical milestone report for the completed phase, without rewriting older milestone reports.
 
+Permanent product non-goals must remain visibly separate from deferred simulator features. Active documentation may state that changing a permanent non-goal would require an explicit future revision of the canonical full specification and implementation guide. Active documentation must not imply that a permanent non-goal is automatically scheduled after the current Irvine32 roadmap.
 
 `source-load-error` is for browser/project source-loading failures only. It must not be used for PE loading, object linking, import-library loading, host-file loading, Windows loader behavior, or any other linker/loader behavior outside the simulator boundary.
 

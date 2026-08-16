@@ -6,10 +6,10 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 89 - Irvine32 WriteString |
-| Source-run output contract | phase-89-irvine32-writestring-contract-v1 |
+| Current milestone | Phase 89A - Irvine32 Active Documentation and Static Status Guardrails |
+| Runtime/source-run MASM behavior phase | Phase 89 - Irvine32 WriteString |
 
-Phase 89 is the current runtime/source-run behavior milestone. It implements virtual Irvine32 `WriteString` for direct `call WriteString`, reading the null-terminated byte string at simulated VM address `EDX` through checked VM memory and appending it atomically to Program Console. Phase 88 virtual Irvine32 `WriteChar` and Phase 87 virtual Irvine32 `Crlf` remain implemented.
+Phase 89A updates active documentation and static validation only; runtime/source-run MASM behavior remains Phase 89.
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -58,7 +58,7 @@ At a high level, the current subset includes:
 Future/deferred simulator features include:
 
 - `loop`;
-- procedure-frame and calling-convention features beyond Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering, Phase 83 helper-level `ADDR symbol` preparation, Phase 82 zero-argument same-file user-procedure `INVOKE`, Phase 81 parser-only `PROTO` metadata, and Phase 80 LOCAL operand access, including Irvine32 routine `INVOKE` dispatch beyond zero-argument `INVOKE Crlf`, external/API execution, source-level `ADDR` outside accepted INVOKE arguments, `OFFSET local`, computed `ADDR` expressions, scaled-index LOCAL addressing, QWORD/SQWORD executable LOCAL memory operands, executable `PROTO` behavior, pointer or unnamed prototype parameters, `VARARG`, runtime parameters, and calling conventions;
+- procedure-frame and calling-convention features beyond Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering, Phase 83 helper-level `ADDR symbol` preparation, Phase 82 zero-argument same-file user-procedure `INVOKE`, Phase 81 parser-only `PROTO` metadata, and Phase 80 LOCAL operand access, including Irvine32 routine `INVOKE` dispatch beyond zero-argument `INVOKE Crlf`, source-level `ADDR` outside accepted INVOKE arguments, `OFFSET local`, computed `ADDR` expressions, scaled-index LOCAL addressing, QWORD/SQWORD executable LOCAL memory operands, executable `PROTO` behavior, pointer or unnamed prototype parameters, `VARARG`, runtime parameters, and calling conventions;
 - selected Irvine32 routine dispatch beyond virtual `Crlf`, direct `WriteChar`, and direct `WriteString`;
 - active-time or wall-clock watchdog behavior;
 - debugger/editor branch behavior;

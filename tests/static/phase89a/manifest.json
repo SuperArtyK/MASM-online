@@ -1,0 +1,369 @@
+{
+  "schemaVersion": 2,
+  "repositorySurfaces": [
+    {
+      "path": "README.md",
+      "role": "active-current-status",
+      "validator": "markdown",
+      "startMarker": "## Current status",
+      "endMarker": "## Quick start"
+    },
+    {
+      "path": "docs/BUILDING_AND_DEVELOPMENT.md",
+      "role": "active-current-status",
+      "validator": "markdown",
+      "startMarker": "## Current status",
+      "endMarker": "## Artifact verification versus rebuild verification"
+    },
+    {
+      "path": "docs/FULL_IMPLEMENTATION_SPEC.md",
+      "role": "active-current-status",
+      "validator": "markdown",
+      "startMarker": "Simulator-owned rejected CALL target forms are rejected in the current subset",
+      "endMarker": "#### 8.6.2 Additional Textbook v1 Instructions"
+    },
+    {
+      "path": "docs/FULL_IMPLEMENTATION_SPEC.md",
+      "role": "active-current-status",
+      "validator": "markdown",
+      "startMarker": "## 13. Irvine32 Runtime Support",
+      "endMarker": "## 14. Console and Input Model"
+    },
+    {
+      "path": "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
+      "role": "active-current-status",
+      "validator": "markdown",
+      "startMarker": "## 93A. Phase 89A - Irvine32 Active Documentation and Static Status Guardrails",
+      "endMarker": "### Required fixtures"
+    },
+    {
+      "path": "docs/SUPPORTED_SYNTAX.md",
+      "role": "active-current-status",
+      "validator": "markdown"
+    },
+    {
+      "path": "docs/TESTING_GUIDE.md",
+      "role": "active-current-status",
+      "validator": "markdown",
+      "endMarker": "## Current regression coverage"
+    },
+    {
+      "path": "docs/TESTING_GUIDE.md",
+      "role": "active-current-status",
+      "validator": "markdown",
+      "startMarker": "### Phase 89A documentation/status-guardrail test execution",
+      "endMarker": "## Current-status documentation clutter checks"
+    },
+    {
+      "path": "docs/MILESTONE_HISTORY.md",
+      "role": "active-current-status",
+      "validator": "markdown",
+      "endMarker": "## Phase 89 - Irvine32 WriteString"
+    },
+    {
+      "path": "web/index.html",
+      "role": "active-current-status",
+      "validator": "status-shape"
+    },
+    {
+      "path": "src/wasm/wasm_api.c",
+      "role": "active-metadata",
+      "validator": "metadata"
+    },
+    {
+      "path": "web/src/protocol.js",
+      "role": "active-metadata",
+      "validator": "metadata"
+    },
+    {
+      "path": "docs/history/reports/*.md",
+      "role": "historical",
+      "validator": "none"
+    },
+    {
+      "path": "docs/history/PROJECT_AUDIT_AND_HANDOFF_REPORT_*.md",
+      "role": "historical",
+      "validator": "none",
+      "requireMatch": false
+    },
+    {
+      "path": "docs/history/reports/Milestone 89 report.md",
+      "role": "historical",
+      "validator": "none",
+      "expectedSha256": "93233aa1aa7a55340038d6148a183c44b8cb0b522c267621bc3b5bbb0ac2d766"
+    }
+  ],
+  "fixtures": [
+    {
+      "path": "positive_active_inventory.md",
+      "role": "active-current-status",
+      "expect": "pass"
+    },
+    {
+      "path": "positive_call_invoke_distinction.md",
+      "role": "active-current-status",
+      "expect": "pass"
+    },
+    {
+      "path": "positive_deferred_vs_nongoal.md",
+      "role": "active-current-status",
+      "expect": "pass"
+    },
+    {
+      "path": "positive_separate_same_sentence.md",
+      "role": "active-current-status",
+      "expect": "pass"
+    },
+    {
+      "path": "positive_historical_phase87.md",
+      "role": "historical",
+      "expect": "pass"
+    },
+    {
+      "path": "positive_historical_phase88.md",
+      "role": "historical",
+      "expect": "pass"
+    },
+    {
+      "path": "positive_active_metadata.json",
+      "role": "active-metadata",
+      "expect": "pass"
+    },
+    {
+      "path": "positive_future_tokens_absent.json",
+      "role": "future-token",
+      "expect": "pass"
+    },
+    {
+      "path": "negative_stale_later_inventory.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-writestring",
+      "expectedLine": 5
+    },
+    {
+      "path": "negative_missing_writestring.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-writestring",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_varied_stale_wording.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-writestring",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_supported_inventory_without_current.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-writestring",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_missing_writestring_table.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-writestring",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_missing_writestring_list.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-writestring",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_invoke_only_writestring_table.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-writestring",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_direct_crlf_deferred.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "direct-crlf-deferred",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_invoke_crlf_deferred.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "invoke-crlf-deferred",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_direct_writechar_deferred.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "direct-writechar-deferred",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_invoke_writechar_implemented.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "invoke-writechar-implemented",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_virtual_exit_deferred.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "virtual-exit-deferred",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_direct_writestring_deferred.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "direct-writestring-deferred",
+      "expectedLine": 5
+    },
+    {
+      "path": "negative_invoke_writestring_implemented.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "invoke-writestring-implemented",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_combined_deferred_nongoal.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "combined-deferred-and-nongoal",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_combined_deferred_nongoal_varied.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "combined-deferred-and-nongoal",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_metadata_mismatch.json",
+      "role": "active-metadata",
+      "expect": "fail",
+      "expectedCode": "phase-token-mismatch",
+      "expectedLine": 1
+    },
+    {
+      "path": "positive_mixed_exact_form_sentence.md",
+      "role": "active-current-status",
+      "expect": "pass"
+    },
+    {
+      "path": "positive_contextual_category_lists.md",
+      "role": "active-current-status",
+      "expect": "pass"
+    },
+    {
+      "path": "negative_implicit_consists_inventory.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-writestring",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_include_provides_inventory.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-writestring",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_table_yes_inventory.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-writestring",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_contextual_future_list.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "combined-deferred-and-nongoal",
+      "expectedLine": 5
+    },
+    {
+      "path": "negative_combined_windows_api_future.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "combined-deferred-and-nongoal",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_combined_shared_unsupported.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "combined-deferred-and-nongoal",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_invoke_writestring_works.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "invoke-writestring-implemented",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_direct_writestring_unavailable.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "direct-writestring-deferred",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_phase_number_mismatch.json",
+      "role": "active-metadata",
+      "expect": "fail",
+      "expectedCode": "phase-token-mismatch",
+      "expectedLine": 1
+    },
+    {
+      "path": "negative_phase_name_mismatch.json",
+      "role": "active-metadata",
+      "expect": "fail",
+      "expectedCode": "phase-name-mismatch",
+      "expectedLine": 1
+    },
+    {
+      "path": "negative_phase_suffix_mismatch.json",
+      "role": "active-metadata",
+      "expect": "fail",
+      "expectedCode": "phase-suffix-mismatch",
+      "expectedLine": 1
+    },
+    {
+      "path": "negative_future_token_premature.json",
+      "role": "future-token",
+      "expect": "fail",
+      "expectedCode": "future-token-premature",
+      "expectedLine": 1
+    },
+    {
+      "path": "positive_and_exact_form_sentence.md",
+      "role": "active-current-status",
+      "expect": "pass"
+    },
+    {
+      "path": "positive_dot_exit_directive.md",
+      "role": "active-current-status",
+      "expect": "pass"
+    },
+    {
+      "path": "negative_contextual_current_list.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-writestring",
+      "expectedLine": 5
+    }
+  ],
+  "defaultEditorSourceSha256": "c335db3df801498c8325d61b281d87c12f898b484e406ab759c71bfe35b77947"
+}
