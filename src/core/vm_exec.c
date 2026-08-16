@@ -11,12 +11,12 @@
  * Phase 70 helper plain near RET, Phase 71 root-code-stream RET termination, Phase 72A source-level PUSH/POP, Phase 73 LEAVE, Phase 74 RET imm16 cleanup,
  * Phase 71D configurable procedure-fallthrough diagnostics, Phase 71E
  * entry-procedure auto-stop compatibility, Phase 71C code-stream
- * end-falloff diagnostics, Irvine32 exit, Phase 87 virtual Irvine32 Crlf, Phase 88 virtual Irvine32 WriteChar, Phase 89 virtual Irvine32 WriteString, and Phase 90 virtual Irvine32 WriteDec
+ * end-falloff diagnostics, Irvine32 exit, Phase 87 virtual Irvine32 Crlf, Phase 88 virtual Irvine32 WriteChar, Phase 89 virtual Irvine32 WriteString, Phase 90 virtual Irvine32 WriteDec, and Phase 91 virtual Irvine32 WriteInt
  * over the currently supported register and memory operand forms. It records
  * last-step deltas by snapshotting CPU state and copying memory-module byte
  * changes after each successful step. Phase 68A initializes ESP from the active
  * stack region at startup; source-level PUSH/POP, LEAVE, and RET imm16 cleanup are supported,
- * and Phase 77 saves and restores PROC USES registers on supported direct CALL/RET paths. Phase 79 creates automatic LOCAL frames for selected-entry and direct-CALL procedure paths, and Phase 80 resolves supported source-level LOCAL operands through active frame-relative storage. Phase 84 captures and commits accepted same-file user-procedure INVOKE DWORD arguments, including ADDR active-LOCAL arguments. Phase 87 appends virtual Irvine32 Crlf output through Program Console without changing registers, flags, or memory. Phase 88 appends the low byte of AL for direct virtual Irvine32 WriteChar without changing registers, flags, or memory. Phase 89 appends a null-terminated byte string addressed by EDX for direct virtual Irvine32 WriteString without changing registers, flags, or memory. Phase 90 appends the shortest unsigned decimal representation of EAX for direct virtual Irvine32 WriteDec without changing registers, flags, or memory. ENTER, far returns, general source-level ADDR outside accepted INVOKE arguments, and Irvine32 routines beyond exit, Crlf, direct WriteChar, direct WriteString, and direct WriteDec remain later milestones. Phase 69
+ * and Phase 77 saves and restores PROC USES registers on supported direct CALL/RET paths. Phase 79 creates automatic LOCAL frames for selected-entry and direct-CALL procedure paths, and Phase 80 resolves supported source-level LOCAL operands through active frame-relative storage. Phase 84 captures and commits accepted same-file user-procedure INVOKE DWORD arguments, including ADDR active-LOCAL arguments. Phase 87 appends virtual Irvine32 Crlf output through Program Console without changing registers, flags, or memory. Phase 88 appends the low byte of AL for direct virtual Irvine32 WriteChar without changing registers, flags, or memory. Phase 89 appends a null-terminated byte string addressed by EDX for direct virtual Irvine32 WriteString without changing registers, flags, or memory. Phase 90 appends the shortest unsigned decimal representation of EAX for direct virtual Irvine32 WriteDec without changing registers, flags, or memory. Phase 91 appends the shortest signed decimal representation of EAX for direct virtual Irvine32 WriteInt without changing registers, flags, or memory. ENTER, far returns, general source-level ADDR outside accepted INVOKE arguments, and Irvine32 routines beyond exit, Crlf, direct WriteChar, direct WriteString, direct WriteDec, and direct WriteInt remain later milestones. Phase 69
  * implements direct user-procedure CALL as a checked internal stack write,
  * Phase 70 implements helper RET as a checked internal stack read, and Phase 71
  * treats an eligible root-code-stream RET as successful termination. Phase 68B
@@ -5028,6 +5028,66 @@ static VmExecStatus vm_exec_execute_irvine32_writedec(Vm *vm, const VmIrInstruct
 }
 
 
+/// Executes virtual Irvine32 WriteInt.
+///
+/// WriteInt reads the raw 32-bit EAX bit pattern, interprets it as signed
+/// two's-complement, constructs the shortest signed decimal representation,
+/// and commits the complete sign-plus-digit candidate through the shared
+/// atomic Program Console limit path. Negative magnitude conversion uses only
+/// defined unsigned arithmetic so 0x80000000 formats as -2147483648 without
+/// signed overflow. The routine reads no simulated memory and preserves all
+/// modeled CPU state.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction WriteInt instruction descriptor used for limit diagnostics.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_irvine32_writeint(Vm *vm, const VmIrInstruction *instruction) {
+    uint32_t eax = 0U;
+    uint32_t magnitude = 0U;
+    bool negative = false;
+    char reversed[10];
+    char candidate[11];
+    size_t digit_count = 0U;
+    size_t candidate_length = 0U;
+    size_t index = 0U;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (instruction->destination.kind != VM_IR_OPERAND_NONE || instruction->source.kind != VM_IR_OPERAND_NONE) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_EAX, &eax)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    negative = (eax & 0x80000000U) != 0U;
+    magnitude = negative ? (~eax + 1U) : eax;
+    if (negative) {
+        candidate[candidate_length] = '-';
+        candidate_length += 1U;
+    }
+
+    if (magnitude == 0U) {
+        candidate[candidate_length] = '0';
+        candidate_length += 1U;
+    } else {
+        uint32_t remaining = magnitude;
+        while (remaining != 0U) {
+            reversed[digit_count] = (char)('0' + (remaining % 10U));
+            digit_count += 1U;
+            remaining /= 10U;
+        }
+        for (index = 0U; index < digit_count; index += 1U) {
+            candidate[candidate_length + index] = reversed[digit_count - index - 1U];
+        }
+        candidate_length += digit_count;
+    }
+
+    return vm_append_program_console_output(vm, candidate, candidate_length, instruction);
+}
+
+
 /// Grows a candidate WriteString output buffer while preserving existing bytes.
 ///
 /// @param inout_buffer Owned candidate buffer pointer to grow.
@@ -5312,6 +5372,8 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             return vm_exec_execute_irvine32_writestring(vm, instruction);
         case VM_IR_OPCODE_IRVINE32_WRITEDEC:
             return vm_exec_execute_irvine32_writedec(vm, instruction);
+        case VM_IR_OPCODE_IRVINE32_WRITEINT:
+            return vm_exec_execute_irvine32_writeint(vm, instruction);
         default:
             return VM_EXEC_STATUS_INVALID_INSTRUCTION;
     }

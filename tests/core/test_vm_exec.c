@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 90 Irvine32 WriteDec coverage.
+ * @brief Unit tests for the VM executor through Phase 91 Irvine32 WriteInt coverage.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
@@ -8,7 +8,7 @@
  * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end-mode compatibility, Phase 71F explicit-exit fallthrough regression coverage, Phase 72
  * call-depth resource-limit coverage, Phase 72A source-level PUSH/POP,
  * Phase 73 LEAVE frame teardown, Phase 74 RET imm16 cleanup, and
- * Phase 77 PROC USES runtime save/restore, Phase 79 automatic LOCAL stack allocation/lifetime, Phase 80 LOCAL operand active-frame checks, Phase 87 virtual Irvine32 Crlf output, Phase 88 virtual Irvine32 WriteChar output, Phase 89 virtual Irvine32 WriteString output, and Phase 90 virtual Irvine32 WriteDec output. They intentionally avoid parser and browser UI behavior except for the Phase 42 virtual exit terminator and focused Irvine32 routine contracts.
+ * Phase 77 PROC USES runtime save/restore, Phase 79 automatic LOCAL stack allocation/lifetime, Phase 80 LOCAL operand active-frame checks, Phase 87 virtual Irvine32 Crlf output, Phase 88 virtual Irvine32 WriteChar output, Phase 89 virtual Irvine32 WriteString output, Phase 90 virtual Irvine32 WriteDec output, and Phase 91 virtual Irvine32 WriteInt output. They intentionally avoid parser and browser UI behavior except for the Phase 42 virtual exit terminator and focused Irvine32 routine contracts.
  */
 
 #include <stdbool.h>
@@ -1092,6 +1092,131 @@ static int test_phase90_irvine32_writedec_output_limits_are_atomic(void) {
     } else {
         failures += expect_u32(diagnostic->instruction.source_line, 21U, "WriteDec output-limit diagnostic should preserve the call line");
         failures += expect_string(diagnostic->instruction.source_text, "call WriteDec", "WriteDec output-limit diagnostic should preserve the full call instruction text");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 91 WriteInt formats signed EAX values and preserves VM state.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase91_irvine32_writeint_formats_and_preserves_state(void) {
+    int failures = 0;
+    static const struct {
+        uint32_t value;
+        const char *expected;
+    } cases[] = {
+        {0x00000000U, "0"},
+        {0x00000001U, "1"},
+        {0x00000009U, "9"},
+        {0x0000000AU, "10"},
+        {0xFFFFFFFFU, "-1"},
+        {0xFFFFFFF7U, "-9"},
+        {0xFFFFFFF6U, "-10"},
+        {0x7FFFFFFFU, "2147483647"},
+        {0x80000001U, "-2147483647"},
+        {0x80000000U, "-2147483648"}
+    };
+    size_t case_index = 0U;
+
+    for (case_index = 0U; case_index < sizeof(cases) / sizeof(cases[0]); case_index += 1U) {
+        Vm vm;
+        uint32_t value = 0U;
+        const VmExecDelta *delta = NULL;
+        const VmIrInstruction program[] = {
+            {VM_IR_OPCODE_IRVINE32_WRITEINT, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 22U, "call WriteInt", 0U}
+        };
+
+        failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteInt formatting test");
+        failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteInt formatting program should load");
+        failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, cases[case_index].value) ? 0 : record_failure("seed EAX should succeed before WriteInt");
+        failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0x33333333U) ? 0 : record_failure("seed EBX should succeed before WriteInt");
+        failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_CF) ? 0 : record_failure("seed CF should succeed before WriteInt");
+        failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 21U, 1U, 210U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity before WriteInt should succeed");
+
+        failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "WriteInt should execute successfully");
+        failures += expect_string(vm_console_text(vm_program_console(&vm)), cases[case_index].expected, "WriteInt should emit the shortest signed decimal representation");
+        failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 0U, "WriteInt should not change Program Console line count");
+        failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &value) ? 0 : record_failure("EAX read after WriteInt should succeed");
+        failures += expect_u32(value, cases[case_index].value, "WriteInt should preserve EAX bit pattern");
+        failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &value) ? 0 : record_failure("EBX read after WriteInt should succeed");
+        failures += expect_u32(value, 0x33333333U, "WriteInt should preserve unrelated registers");
+        failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "WriteInt should preserve CF");
+        failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 21U, "WriteInt should preserve OF validity metadata");
+        delta = vm_last_delta(&vm);
+        failures += expect_size(delta->register_change_count, 0U, "WriteInt should report no register changes");
+        failures += expect_size(delta->flag_change_count, 0U, "WriteInt should report no flag changes");
+        failures += expect_size(delta->memory_change_count, 0U, "WriteInt should report no memory changes");
+        failures += expect_size(delta->memory_access_count, 0U, "WriteInt should report no memory accesses");
+
+        vm_deinit(&vm);
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 91 WriteInt exact-fit success and sign-plus-digit atomic failure.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase91_irvine32_writeint_output_limits_are_atomic(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t value = 0U;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmExecDelta *delta = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_IRVINE32_WRITEINT, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 23U, "call WriteInt", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteInt exact-fit test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteInt exact-fit program should load");
+    failures += expect_status(vm_append_program_console_output(&vm, "pre", 3U, NULL), VM_EXEC_STATUS_OK, "WriteInt exact-fit prefix should commit");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 14U, 1U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "WriteInt exact-fit byte limit should configure");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x80000000U) ? 0 : record_failure("seed INT32_MIN bit pattern before exact-fit WriteInt should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "WriteInt should succeed with exact remaining capacity");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "pre-2147483648", "WriteInt exact-fit should append the complete negative candidate");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 0U, "WriteInt exact-fit should not change line count");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteInt line-capacity test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteInt line-capacity program should load");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 64U, 1U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "WriteInt line-capacity limit should configure");
+    failures += expect_status(vm_append_program_console_output(&vm, "ok\n", 3U, NULL), VM_EXEC_STATUS_OK, "WriteInt line-capacity prefix should fill the permitted line count");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0xFFFFFFFFU) ? 0 : record_failure("seed -1 before WriteInt line-capacity test should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "WriteInt should succeed when existing line count is already at its limit");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "ok\n-1", "WriteInt should append signed digits without consuming another Program Console line");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 1U, "WriteInt should preserve an already-full Program Console line count");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteInt one-byte-short test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteInt one-byte-short program should load");
+    failures += expect_status(vm_append_program_console_output(&vm, "pre", 3U, NULL), VM_EXEC_STATUS_OK, "WriteInt one-byte-short prefix should commit");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 13U, 1U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "WriteInt one-byte-short limit should configure");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x80000000U) ? 0 : record_failure("seed INT32_MIN bit pattern before failing WriteInt should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0xABCDEF01U) ? 0 : record_failure("seed EBX before failing WriteInt should succeed");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_ZF) ? 0 : record_failure("seed ZF before failing WriteInt should succeed");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 22U, 1U, 220U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity before failing WriteInt should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED, "WriteInt should fail when capacity can hold the sign but not the complete value");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "pre", "WriteInt output-limit failure should append neither sign nor partial digits");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 0U, "WriteInt output-limit failure should preserve line count");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &value) ? 0 : record_failure("EAX read after failing WriteInt should succeed");
+    failures += expect_u32(value, 0x80000000U, "WriteInt failure should preserve EAX bit pattern");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &value) ? 0 : record_failure("EBX read after failing WriteInt should succeed");
+    failures += expect_u32(value, 0xABCDEF01U, "WriteInt failure should preserve unrelated registers");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "WriteInt failure should preserve flags");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 22U, "WriteInt failure should preserve flag-validity metadata");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta->register_change_count, 0U, "WriteInt failure should report no register changes");
+    failures += expect_size(delta->flag_change_count, 0U, "WriteInt failure should report no flag changes");
+    failures += expect_size(delta->memory_change_count, 0U, "WriteInt failure should report no memory changes");
+    failures += expect_size(delta->memory_access_count, 0U, "WriteInt failure should report no memory accesses");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED) {
+        failures += record_failure("WriteInt one-byte-short failure should record the shared output-limit diagnostic");
+    } else {
+        failures += expect_u32(diagnostic->instruction.source_line, 23U, "WriteInt output-limit diagnostic should preserve the call line");
+        failures += expect_string(diagnostic->instruction.source_text, "call WriteInt", "WriteInt output-limit diagnostic should preserve the full call instruction text");
     }
 
     vm_deinit(&vm);
@@ -6951,6 +7076,9 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_IRVINE32_WRITEDEC), "writedec") != 0) {
         failures += record_failure("WriteDec opcode name should be writedec");
     }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_IRVINE32_WRITEINT), "writeint") != 0) {
+        failures += record_failure("WriteInt opcode name should be writeint");
+    }
     if (vm_ir_opcode_name((VmIrOpcode)99) != NULL) {
         failures += record_failure("invalid opcode name should be NULL");
     }
@@ -6980,7 +7108,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Phase 77 PROC USES runtime save/restore coverage.
+/// Runs all executor tests through Phase 91 Irvine32 WriteInt coverage.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -7009,6 +7137,8 @@ int main(void) {
     failures += test_phase89_irvine32_writestring_failures_are_atomic();
     failures += test_phase90_irvine32_writedec_formats_and_preserves_state();
     failures += test_phase90_irvine32_writedec_output_limits_are_atomic();
+    failures += test_phase91_irvine32_writeint_formats_and_preserves_state();
+    failures += test_phase91_irvine32_writeint_output_limits_are_atomic();
     failures += test_neg_register_memory_and_flags();
     failures += test_phase20_error_paths();
     failures += test_adc_register_carry_propagation();
@@ -7118,6 +7248,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 90 Irvine32 WriteDec coverage passed.");
+    puts("Executor tests through Phase 91 Irvine32 WriteInt coverage passed.");
     return 0;
 }

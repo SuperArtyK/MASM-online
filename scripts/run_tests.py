@@ -519,6 +519,10 @@ def run_structure_tests() -> None:
     assert_text_contains("src/wasm/wasm_api.c", "/// Appends compact JSON")
     assert_text_contains("tests/core/test_vm_exec.c", "/*\n * @file test_vm_exec.c")
     assert_text_contains("tests/core/test_vm_exec.c", "/// Verifies that the hardcoded Milestone 4 sample")
+    assert_text_contains("tests/core/test_vm_exec.c", "/// Runs all executor tests through Phase 91 Irvine32 WriteInt coverage.")
+    assert_text_not_contains("tests/core/test_vm_exec.c", "Runs all executor tests through Phase 77 PROC USES runtime save/restore coverage.")
+    assert_text_not_contains("tests/core/test_parser.c", "Runs all parser regression tests through Phase 60 direct JMP parsing and target lowering.")
+    assert_text_not_contains("tests/core/test_data_section.c", "each Milestone 30 parser test")
     assert_text_contains("src/parser/lexer.h", "/// Identifies one token emitted by the MASM-like lexer")
     assert_text_contains("src/parser/lexer.h", "VmLexerStatus vm_lexer_tokenize")
     assert_text_contains("src/parser/lexer.h", "VM_LEXER_TOKEN_PLUS")
@@ -538,18 +542,10 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "Phase 84 INVOKE accepts only full 32-bit register arguments")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 90 - Irvine32 WriteDec")
-    assert_text_contains("README.md", "Runtime/source-run MASM behavior phase")
-    assert_text_contains("README.md", "Phase 90 - Irvine32 WriteDec")
-    assert_text_contains("README.md", "Phase 90 adds direct virtual Irvine32 `WriteDec` output while preserving the previously implemented Irvine32 output forms and keeping future routine forms deferred.")
-    assert_text_not_contains("README.md", "parser-only `LOCAL` declaration metadata")
-    assert_text_not_contains("README.md", "runtime stack-frame creation for locals")
-    assert_text_contains("README.md", "callDepthLimit")
-    assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
-    assert_text_not_contains("README.md", "- `leave` and `ret imm16`;")
-    assert_text_not_contains("README.md", "- `ret imm16`;")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
+    assert_text_not_contains("docs/SUPPORTED_SYNTAX.md", "\n- `INVOKE`\n")
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "unsupported `INVOKE` forms outside the implemented same-file user-procedure subset and zero-argument `INVOKE Crlf`")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "SBYTE")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "movsx")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "movzx")
@@ -625,14 +621,12 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 90")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 91")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
-    assert_text_contains("web/src/protocol.js", "Phase 90 - Irvine32 WriteDec")
+    assert_text_contains("web/src/protocol.js", "Phase 91 - Irvine32 WriteInt")
     assert_text_contains("scripts/phase89a_status_guardrail.py", "@file phase89a_status_guardrail.py")
     assert_text_contains("scripts/phase89a_status_guardrail.py", "def validate_phase89a_repository")
     assert_text_contains("tests/static/phase89a/manifest.json", "negative_stale_later_inventory.md")
-    assert_text_contains("docs/history/reports/Milestone 89A report.md", "Phase 89A is a documentation and static-validation corrective milestone")
-    assert_text_contains("docs/history/reports/Milestone 89A report.md", "aggregate completed and passed")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -658,11 +652,18 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_exec.c", "vm_exec_execute_rotate_right")
     assert_text_contains("src/core/vm_exec.c", "vm_exec_execute_exit")
     assert_text_contains("src/core/vm_exec.c", "Phase 90 appends the shortest unsigned decimal representation of EAX for direct virtual Irvine32 WriteDec")
-    assert_text_contains("src/parser/parser.c", "Phase 90 direct WriteDec lowering are supported")
+    assert_text_contains("src/parser/parser.c", "Phase 90 direct WriteDec lowering,")
     assert_text_contains("tests/core/test_vm_exec.c", "Phase 90 virtual Irvine32 WriteDec output")
+    assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_IRVINE32_WRITEINT")
+    assert_text_contains("src/core/vm_exec.c", "WriteInt reads the raw 32-bit EAX bit pattern")
+    assert_text_contains("src/parser/parser.c", "Phase 91 direct WriteInt lowering are supported")
+    assert_text_contains("tests/core/test_parser.c", "test_phase91_irvine32_writeint_parser_paths")
+    assert_text_contains("tests/core/test_vm_exec.c", "test_phase91_irvine32_writeint_formats_and_preserves_state")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase91_irvine32_writeint_source_run")
+    assert_text_contains("tests/web/test_diagnostic_rendering.mjs", "Phase 91 renders WriteInt Program Console byte-limit diagnostic exactly")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "Current metadata should report numeric Phase 89")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "Current metadata should report the Phase 89 output contract")
-    assert_text_contains("docs/TESTING_GUIDE.md", "except for direct `CALL WriteChar`, direct `CALL WriteString`, and direct `CALL WriteDec`")
+    assert_text_contains("docs/TESTING_GUIDE.md", "except for direct `CALL WriteChar`, direct `CALL WriteString`, direct `CALL WriteDec`, and direct `CALL WriteInt`")
     assert_text_contains("src/core/vm_exec.c", "vm_exec_execute_mul")
     assert_text_contains("src/parser/parser.c", "Unknown instruction or virtual Irvine32 terminator. Add INCLUDE Irvine32.inc to use exit.")
     assert_text_contains("tests/core/test_parser.c", "test_phase42_irvine32_exit_terminator_parser_paths")
@@ -706,7 +707,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 90 Irvine32 WriteDec passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 91 Irvine32 WriteInt passed.")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "through Phase 78A limited OPTION NOKEYWORD coverage")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "Phase 78A default source-run metadata")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "numeric Phase 78 metadata")
@@ -1169,10 +1170,10 @@ def assert_default_editor_source_run_smoke() -> None:
         raise TestFailure(f"default-editor source-run returned invalid JSON: {error}") from error
 
     expected_values = {
-        "phase": 90,
+        "phase": 91,
         "phaseSuffix": "",
-        "phaseName": "Phase 90 - Irvine32 WriteDec",
-        "sourceRunOutputContract": "phase-90-irvine32-writedec-contract-v1",
+        "phaseName": "Phase 91 - Irvine32 WriteInt",
+        "sourceRunOutputContract": "phase-91-irvine32-writeint-contract-v1",
         "ok": True,
         "status": "ok",
     }
@@ -1184,8 +1185,8 @@ def assert_default_editor_source_run_smoke() -> None:
             )
 
     program_console = payload.get("programConsole")
-    if not isinstance(program_console, dict) or program_console.get("text") != "4294967295":
-        raise TestFailure("default-editor source-run must produce exactly '4294967295' in Program Console")
+    if not isinstance(program_console, dict) or program_console.get("text") != "-2147483648":
+        raise TestFailure("default-editor source-run must produce exactly '-2147483648' in Program Console")
     simulator_messages = payload.get("simulatorMessages")
     if not isinstance(simulator_messages, list):
         raise TestFailure("default-editor source-run must keep Simulator Messages as a separate list")
@@ -1918,7 +1919,7 @@ def assert_phase71b2_stale_milestone_context_checks() -> None:
 
 
 def assert_current_status_and_harness_documented() -> None:
-    """Verify current Phase 90 status, concise status surfaces, and harness documentation wording."""
+    """Verify current Phase 91 status, concise status surfaces, and harness documentation wording."""
 
     def read_repo_text(path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
@@ -1938,8 +1939,8 @@ def assert_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 90 - Irvine32 WriteDec",
-            "Phase 90 adds direct virtual Irvine32 `WriteDec` output while preserving the previously implemented Irvine32 output forms and keeping future routine forms deferred.",
+            "Phase 91 - Irvine32 WriteInt",
+            "Phase 91 adds direct virtual Irvine32 `WriteInt` signed-decimal output while preserving the previously implemented Irvine32 output forms and keeping future routine forms deferred.",
             "stack-overflow",
             "stack-underflow",
             "source-level 32-bit `push` for registers, immediates, and DWORD memory sources",
@@ -2007,8 +2008,8 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 90 - Irvine32 WriteDec",
-            "Phase 90 advances runtime/source-run MASM behavior to direct virtual Irvine32 `WriteDec` and uses the Phase 90 WriteDec output contract.",
+            "Phase 91 - Irvine32 WriteInt",
+            "Phase 91 advances runtime/source-run MASM behavior to direct virtual Irvine32 `WriteInt` and uses the Phase 91 WriteInt output contract.",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
             "stale-wasm-output-contract",
@@ -2054,10 +2055,10 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Current milestone:",
-            "Phase 90 - Irvine32 WriteDec",
+            "Phase 91 - Irvine32 WriteInt",
             "Runtime/source-run MASM behavior phase:",
-            "Phase 90 - Irvine32 WriteDec",
-            "direct virtual Irvine32 `WriteDec` are executable in the current subset after `INCLUDE Irvine32.inc`",
+            "Phase 91 - Irvine32 WriteInt",
+            "direct virtual Irvine32 `WriteInt` are executable in the current subset after `INCLUDE Irvine32.inc`",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
             "Phase 79 allocates runtime stack storage for accepted LOCAL metadata",
             "selected-entry `ENDP` is not an implicit successful terminator",
@@ -2109,9 +2110,9 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 90 - Irvine32 WriteDec",
+            "Phase 91 - Irvine32 WriteInt",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
-            "Phase 90 - Irvine32 WriteDec",
+            "Phase 91 - Irvine32 WriteInt",
             "phase-71e-entry-procedure-end-mode-output-contract-v1",
             "This history file records completed milestones and audit evidence.",
             "It is not the phase-order authority",
@@ -2286,11 +2287,11 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 90 - Irvine32 WriteDec",
+            "Phase 91 - Irvine32 WriteInt",
             "Runtime/source-run MASM behavior phase:",
-            "Phase 90 - Irvine32 WriteDec",
+            "Phase 91 - Irvine32 WriteInt",
             "Phase 79 adds tests for automatic LOCAL frame setup and release",
-            "phase-90-irvine32-writedec-contract-v1",
+            "phase-91-irvine32-writeint-contract-v1",
             "local-frame-entry-unsupported",
             "invalid-frame-state",
             "stack-overflow",
@@ -2320,7 +2321,7 @@ def assert_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 90: Irvine32 WriteDec",
+            "Milestone 91: Irvine32 WriteInt",
             "INCLUDE Irvine32.inc",
                                                                         "exit",
             "final-registers",
@@ -2370,7 +2371,7 @@ def assert_current_status_and_harness_documented() -> None:
             "sourceRunOutputContract",
             "createMismatchedRuntimePhaseDiagnostic",
             "Number.isInteger(runResult.phase)",
-            "IMPLEMENTED_PHASE = 90",
+            "IMPLEMENTED_PHASE = 91",
         ],
     )
     assert_all_text_not_contains(

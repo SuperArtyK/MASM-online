@@ -1680,7 +1680,7 @@ External/API non-goal forms include:
 - host-filesystem include or library targets;
 - far calls, segmented calls, or native-address calls when they imply native x86, PE, Windows, or linker behavior.
 
-Recognized Irvine32 routine and terminator names are not user procedure symbols. Before the owning Irvine32 routine-dispatch phase implements a specific routine, a source form such as `call WriteInt` must be classified as a recognized-but-deferred or recognized-but-unsupported Irvine32 routine call, not as a user-procedure call. Implemented direct forms such as `call WriteString` and `call WriteDec` must route through their simulator-defined Irvine32 intrinsic paths rather than user-procedure lookup.
+Recognized Irvine32 routine and terminator names are not user procedure symbols. Before the owning Irvine32 routine-dispatch phase implements a specific routine, a source form such as `call WriteHex` must be classified as a recognized-but-deferred or recognized-but-unsupported Irvine32 routine call, not as a user-procedure call. Implemented direct forms such as `call WriteString`, `call WriteDec`, and `call WriteInt` must route through their simulator-defined Irvine32 intrinsic paths rather than user-procedure lookup.
 
 A future phase may implement selected Irvine32 routine dispatch, but that work must remain separate from direct user-procedure `CALL`. Direct user-procedure `CALL` must not execute, alias, shadow, or special-case Irvine32 routine names as host callbacks, external imports, WinAPI calls, PE import thunks, linker symbols, or native procedures.
 
@@ -3689,7 +3689,7 @@ The required staging is:
 
 7. **Root procedure termination.** Entry-procedure root RET and non-entry procedure fallthrough diagnostics are finalized after CALL and RET make those paths meaningful. Earlier phases must not add temporary root-return or helper-procedure termination behavior merely to make their own tests easier.
 
-8. **Expanded procedure and stack features.** Source-level `PUSH`, source-level `POP`, call-depth diagnostics, LEAVE, near `RET imm16`, direct-CALL `PROC USES` register save/restore, limited parser-only `PROTO` metadata, zero-argument same-file user-procedure `INVOKE`, helper-level `ADDR symbol` preparation, and limited same-file user-procedure `INVOKE` DWORD argument lowering are implemented in their owning phases. Remaining expanded features such as executable PROTO behavior beyond Phase 84 validation, pointer or unnamed prototype parameters, VARARG, unsupported executable INVOKE argument forms, source-level executable ADDR outside accepted INVOKE arguments and general ADDR operands, stack-frame display, Irvine32 routine dispatch, Irvine32 stack effects, and procedure-frame behavior beyond Phase 84 limited INVOKE DWORD arguments, Phase 83 helper-level ADDR preparation, Phase 82 zero-argument INVOKE, Phase 81 PROTO metadata, and Phase 80 LOCAL operand access must remain deferred until their owning phases. LOCAL declaration metadata is implemented by Phase 78, automatic runtime LOCAL frame allocation/lifetime is implemented by Phase 79, supported source-level LOCAL operand addressing is implemented by Phase 80, limited `PROTO` metadata is implemented by Phase 81, zero-argument same-file user-procedure `INVOKE` is implemented by Phase 82, helper-level `ADDR symbol` preparation is implemented by Phase 83, and limited same-file user-procedure `INVOKE` DWORD argument lowering is implemented by Phase 84. Future phases must preserve the already accepted phase numbering unless the guide is deliberately renumbered.
+8. **Expanded procedure and stack features.** Source-level `PUSH`, source-level `POP`, call-depth diagnostics, LEAVE, near `RET imm16`, direct-CALL `PROC USES` register save/restore, limited parser-only `PROTO` metadata, zero-argument same-file user-procedure `INVOKE`, helper-level `ADDR symbol` preparation, and limited same-file user-procedure `INVOKE` DWORD argument lowering are implemented in their owning phases. Remaining expanded features such as executable PROTO behavior beyond Phase 84 validation, pointer or unnamed prototype parameters, VARARG, unsupported executable INVOKE argument forms, source-level executable ADDR outside accepted INVOKE arguments and general ADDR operands, stack-frame display, Irvine32 routine dispatch beyond implemented virtual `Crlf`, direct `WriteChar`, direct `WriteString`, direct `WriteDec`, and direct `WriteInt`, Irvine32 stack effects beyond those implemented no-stack-effect output forms, and procedure-frame behavior beyond Phase 84 limited INVOKE DWORD arguments, Phase 83 helper-level ADDR preparation, Phase 82 zero-argument INVOKE, Phase 81 PROTO metadata, and Phase 80 LOCAL operand access must remain deferred until their owning phases. LOCAL declaration metadata is implemented by Phase 78, automatic runtime LOCAL frame allocation/lifetime is implemented by Phase 79, supported source-level LOCAL operand addressing is implemented by Phase 80, limited `PROTO` metadata is implemented by Phase 81, zero-argument same-file user-procedure `INVOKE` is implemented by Phase 82, helper-level `ADDR symbol` preparation is implemented by Phase 83, and limited same-file user-procedure `INVOKE` DWORD argument lowering is implemented by Phase 84. Future phases must preserve the already accepted phase numbering unless the guide is deliberately renumbered.
 
 Each stage must preserve the C99 core boundary, central checked memory helpers, planned-read/planned-write validation where memory is accessed, structured diagnostics, rendered Simulator Messages tests, and no-partial-mutation guarantees for fatal runtime failures.
 
@@ -3871,9 +3871,9 @@ External/API calls are not a future CALL target category. They are non-goals. Di
 CALL target classification must preserve this boundary:
 
 - `call UserProc` may become a user procedure call only when `UserProc PROC` exists and the CALL phase accepts direct user-procedure calls.
-- `call WriteString` and `call WriteDec` must classify through the Irvine32 registry, not through the user procedure table.
-- Before the owning Irvine32 dispatch phase implements a recognized routine such as `WriteInt`, `call WriteInt` must produce a recognized-deferred or recognized-unsupported Irvine32 diagnostic.
-- After Phase 89, direct `call WriteString` routes to simulator-defined Irvine32 behavior, and after Phase 90 direct `call WriteDec` does likewise; neither routine becomes an ordinary user procedure symbol.
+- `call WriteString`, `call WriteDec`, and `call WriteInt` must classify through the Irvine32 registry, not through the user procedure table.
+- Before the owning Irvine32 dispatch phase implements a recognized routine, that direct call must produce a recognized-deferred or recognized-unsupported Irvine32 diagnostic; for example, `call WriteHex` remains deferred until its owning phase.
+- After Phase 89, direct `call WriteString` routes to simulator-defined Irvine32 behavior, after Phase 90 direct `call WriteDec` does likewise, and after Phase 91 direct `call WriteInt` does likewise; none becomes an ordinary user procedure symbol.
 - A user declaration such as `WriteString PROC` must be rejected or otherwise handled through the reserved-word/registry collision policy. It must not silently shadow the virtual Irvine32 routine.
 
 `OPTION CASEMAP:NONE` affects accepted user-defined symbols. It does not make recognized Irvine32 routine names case-sensitive, and it does not make recognized Irvine32 routine names available as user procedure names.
@@ -4132,12 +4132,12 @@ WriteDec:
   Implementing WriteDec must not implement WriteInt, WriteHex, WriteBin, INVOKE WriteString, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation.
 
 WriteInt:
-  Future-owned until Phase 91 or a later accepted replacement phase implements it.
-  Accepted executable source forms after INCLUDE Irvine32.inc, once implemented:
+  Implemented by Phase 91 for the direct virtual Irvine32 call form below.
+  Accepted executable source forms after INCLUDE Irvine32.inc:
     call WriteInt
   Matching must be case-insensitive for the Irvine32 routine name even when OPTION CASEMAP:NONE is active.
-  CALL WriteInt without INCLUDE Irvine32.inc must be an assembly error after the routine is implemented.
-  Bare WriteInt must be an assembly error after the routine is implemented.
+  CALL WriteInt without INCLUDE Irvine32.inc is an assembly error.
+  Bare WriteInt after INCLUDE Irvine32.inc is an assembly error.
   INVOKE WriteInt remains future-owned until a later accepted phase implements that exact source form.
   Input: EAX interpreted as a signed 32-bit two's-complement integer.
   Output: append the shortest base-10 signed decimal representation of EAX to Program Console.
@@ -4150,7 +4150,7 @@ WriteInt:
   Preserve all modeled registers, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
   Write no simulated memory.
   Write no Simulator Messages on success except non-program-output diagnostics required by active policy.
-  Implementing WriteInt must not implement WriteDec, WriteHex, WriteBin, INVOKE WriteString, input routines, debug routines, random routines, file routines, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation.
+  Implementing WriteInt must not implement WriteHex, WriteBin, INVOKE WriteInt, later Irvine32 input/debug/random/file routine families, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation. Existing WriteDec behavior remains unchanged.
 
 WriteHex:
   Future-owned until Phase 92 or a later accepted replacement phase implements it.
@@ -4295,7 +4295,7 @@ If a precise future phase is known, the diagnostic should name both the phase nu
 Acceptable diagnostic wording examples:
 
 ```text
-WriteInt is a recognized Irvine32 routine, but executable signed-decimal Irvine32 output is deferred to its owning later phase.
+WriteHex is a recognized Irvine32 routine, but executable hexadecimal Irvine32 output is deferred to its owning later phase.
 ```
 
 ```text

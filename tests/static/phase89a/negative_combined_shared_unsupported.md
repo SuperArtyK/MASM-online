@@ -1,3 +1,3 @@
 # Shared unsupported status across different categories
 
-`WriteInt` and WinAPI execution remain unsupported.
+`WriteHex` and WinAPI execution remain unsupported.

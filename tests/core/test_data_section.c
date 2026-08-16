@@ -18,34 +18,34 @@
 #include "../../src/parser/symbols.h"
 #include "../../src/wasm/wasm_api.h"
 
-/// Number of lexer tokens available to each Milestone 30 parser test.
+/// Number of lexer tokens available to each data-section parser test.
 #define TEST_TOKEN_CAPACITY 256U
 
-/// Number of lexer diagnostics available to each Milestone 30 parser test.
+/// Number of lexer diagnostics available to each data-section parser test.
 #define TEST_LEXER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of parser diagnostics available to each Milestone 30 parser test.
+/// Number of parser diagnostics available to each data-section parser test.
 #define TEST_PARSER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of IR instructions available to each Milestone 30 parser test.
+/// Number of IR instructions available to each data-section parser test.
 #define TEST_INSTRUCTION_CAPACITY 64U
 
-/// Number of source-text bytes available to each Milestone 30 parser test.
+/// Number of source-text bytes available to each data-section parser test.
 #define TEST_SOURCE_TEXT_CAPACITY 1024U
 
-/// Number of data symbols available to each Milestone 30 parser test.
+/// Number of data symbols available to each data-section parser test.
 #define TEST_SYMBOL_CAPACITY 32U
 
-/// Number of code labels available to each Milestone 30 parser test.
+/// Number of code labels available to each data-section parser test.
 #define TEST_CODE_LABEL_CAPACITY 32U
 
-/// Number of data image bytes available to each Milestone 30 parser test.
+/// Number of data image bytes available to each data-section parser test.
 #define TEST_DATA_IMAGE_CAPACITY 512U
 
-/// Number of const image bytes available to each Milestone 30 parser test.
+/// Number of const image bytes available to each data-section parser test.
 #define TEST_CONST_IMAGE_CAPACITY 512U
 
-/// Holds all caller-owned parser buffers for one Milestone 30 test.
+/// Holds all caller-owned parser buffers for one data-section test.
 typedef struct DataSectionTestBuffers {
     /// Lexer token buffer.
     VmLexerToken tokens[TEST_TOKEN_CAPACITY];
@@ -205,7 +205,7 @@ static int expect_json_not_contains(const char *json, const char *unexpected, co
     return 0;
 }
 
-/// Parses source with full Milestone 30 buffers.
+/// Parses source with the full data-section test buffers.
 ///
 /// @param source Source text to parse.
 /// @param buffers Test buffers to use.
@@ -1556,7 +1556,7 @@ static int test_all_gpr_register_indirect_bases_source_run(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":90", "all-GPR response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":91", "all-GPR response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "all-GPR register-indirect source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000050h\",\"unsigned\":80}", "all-GPR register-indirect read should set EAX = 80");
     failures += expect_json_contains(json, "\"address\":\"0050001Ch\"", "ESP-based write should reach nums + 28");
@@ -1582,7 +1582,7 @@ static int test_symbol_register_memory_forms_execute(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":90", "response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":91", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "symbol/register source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "symbol/register read should set EAX = 100");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500008h\"", "symbol/register write should resolve to nums + 8");
@@ -1725,7 +1725,7 @@ static int test_wasm_json_reports_ptr_width_memory_changes(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":90", "response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":91", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "PTR JSON source should execute");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500003h\",\"widthBits\":8,\"byteOffset\":3,\"dataType\":\"BYTE\"", "BYTE PTR change should report BYTE access width");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500005h\",\"widthBits\":16,\"byteOffset\":5,\"dataType\":\"WORD\"", "WORD PTR change should report WORD access width");
@@ -1751,7 +1751,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":90", "response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":91", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "acceptance source should execute");
     failures += expect_json_contains(json, "\"memoryChanges\":[{\"symbol\":\"var\"", "memory changes should include var symbol");
     failures += expect_json_contains(json, "\"oldHex\":\"00h\"", "memory change should include old byte hex");
@@ -1971,7 +1971,7 @@ static int test_signed_ptr_width_aliases_source_run_programs(void) {
         "END main\n"
     );
 
-    failures += expect_json_contains(read_copy, "\"phase\":90", "signed PTR read response should identify current runtime phase");
+    failures += expect_json_contains(read_copy, "\"phase\":91", "signed PTR read response should identify current runtime phase");
     failures += expect_json_contains(read_copy, "\"ok\":true", "signed PTR read source should execute");
     failures += expect_json_contains(read_copy, "\"EAX\":{\"hex\":\"000000FFh\",\"unsigned\":255}", "SBYTE PTR read into AL should not sign-extend");
     failures += expect_json_contains(read_copy, "\"EBX\":{\"hex\":\"0000FFFEh\",\"unsigned\":65534}", "SWORD PTR read into BX should preserve raw 16-bit value");
@@ -2130,7 +2130,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
     }
 
     acceptance_json = masm32_sim_wasm_run_source_json(source);
-    failures += expect_json_contains(acceptance_json, "\"phase\":90", "additional data source-run should identify current runtime phase");
+    failures += expect_json_contains(acceptance_json, "\"phase\":91", "additional data source-run should identify current runtime phase");
     failures += expect_json_contains(acceptance_json, "\"EAX\":{\"hex\":\"00000010h\",\"unsigned\":16}", "source-run should report SIZEOF buf in EAX");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "source-run should report .CONST read in EBX");
 
@@ -2520,7 +2520,7 @@ static int test_phase29_extended_constant_expressions(void) {
         "END main\n"
     );
     failures += expect_json_contains(json, "\"ok\":true", "Milestone 29 acceptance source should execute");
-    failures += expect_json_contains(json, "\"phase\":90", "response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":91", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Ch\",\"unsigned\":12}", "COUNT should fold to 12");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000080h\",\"unsigned\":128}", "MASK should fold to 128");
     failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"00005678h\",\"unsigned\":22136}", "LOWWORD should fold to 5678h");
@@ -2571,7 +2571,7 @@ static int test_phase30_nested_dup_acceptance_program(void) {
         "END main\n"
     );
     failures += expect_json_contains(json, "\"ok\":true", "Milestone 30 acceptance source should execute");
-    failures += expect_json_contains(json, "\"phase\":90", "response should identify current runtime phase");
+    failures += expect_json_contains(json, "\"phase\":91", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Ch\",\"unsigned\":12}", "LENGTHOF matrix should be 12");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000030h\",\"unsigned\":48}", "SIZEOF matrix should be 48");
 
@@ -2907,7 +2907,7 @@ static int test_signed_ptr_width_alias_error_paths(void) {
 
 /// Test entry point.
 ///
-/// @return Zero when all Milestone 29 tests pass.
+/// @return Zero when all data-section tests pass.
 int main(void) {
     int failures = 0;
 
