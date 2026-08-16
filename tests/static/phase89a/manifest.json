@@ -31,10 +31,8 @@
     },
     {
       "path": "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
-      "role": "active-current-status",
-      "validator": "markdown",
-      "startMarker": "## 93A. Phase 89A - Irvine32 Active Documentation and Static Status Guardrails",
-      "endMarker": "### Required fixtures"
+      "role": "historical",
+      "validator": "none"
     },
     {
       "path": "docs/SUPPORTED_SYNTAX.md",
@@ -58,7 +56,7 @@
       "path": "docs/MILESTONE_HISTORY.md",
       "role": "active-current-status",
       "validator": "markdown",
-      "endMarker": "## Phase 89 - Irvine32 WriteString"
+      "endMarker": "## Phase 89A - Irvine32 Active Documentation and Static Status Guardrails"
     },
     {
       "path": "web/index.html",
@@ -363,7 +361,28 @@
       "expect": "fail",
       "expectedCode": "missing-direct-writestring",
       "expectedLine": 5
+    },
+    {
+      "path": "negative_missing_writedec.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-writedec",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_direct_writedec_deferred.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "direct-writedec-deferred",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_invoke_writedec_implemented.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "invoke-writedec-implemented",
+      "expectedLine": 3
     }
   ],
-  "defaultEditorSourceSha256": "c335db3df801498c8325d61b281d87c12f898b484e406ab759c71bfe35b77947"
+  "defaultEditorSourceSha256": "e27f7cf8ef9ddab5d81bcadd6cf8dc06a190364edcbfa2b4bf683a0cfbb77fe5"
 }

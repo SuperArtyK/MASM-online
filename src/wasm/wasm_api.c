@@ -28,7 +28,7 @@
  * Phase 82 zero-argument user-procedure INVOKE lowering and diagnostics,
  * Phase 83 ADDR helper preparation, Phase 84 limited INVOKE DWORD argument
  * lowering and cleanup validation, Phase 86 Program Console output-limit
- * serialization, Phase 87 Irvine32 Crlf, Phase 88 Irvine32 WriteChar, and Phase 89 Irvine32 WriteString, and recovered unsupported-feature
+ * serialization, Phase 87 Irvine32 Crlf, Phase 88 Irvine32 WriteChar, Phase 89 Irvine32 WriteString, and Phase 90 Irvine32 WriteDec, and recovered unsupported-feature
  * diagnostics, then reports a compact JSON result for the UI.
  */
 
@@ -95,16 +95,16 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase reported to JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 89U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 90U
 
-/// Suffix for the current Phase 89 runtime/source-run behavior phase.
+/// Suffix for the current Phase 90 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 89 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 89 - Irvine32 WriteString"
+/// Full name of the current Phase 90 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 90 - Irvine32 WriteDec"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 89 Irvine32 WriteString Program Console output.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-89-irvine32-writestring-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 90 Irvine32 WriteDec Program Console output.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-90-irvine32-writedec-contract-v1"
 
 /// Canonical empty Program Console JSON object for source-run fallback responses.
 #define MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON "\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0,\"maxBytes\":1048576,\"maxLines\":10000,\"limitExceeded\":false,\"limitKind\":null}"
@@ -653,6 +653,12 @@ static const Masm32SimWasmSyntheticConsoleOutput *g_masm32_sim_wasm_synthetic_co
 
 /// Optional test-facing WriteString scan limit override for the next source run.
 static uint32_t g_masm32_sim_wasm_writestring_scan_limit_override = 0U;
+
+/// Test-only Program Console maximum-byte override applied before source execution.
+static uint32_t g_masm32_sim_wasm_program_console_max_bytes_override = 0U;
+
+/// Test-only Program Console maximum-line override applied before source execution.
+static uint32_t g_masm32_sim_wasm_program_console_max_lines_override = 0U;
 
 /// Returns whether a Phase 57F startup register/flag mode enum value is accepted.
 ///
@@ -9347,6 +9353,18 @@ static const char *masm32_sim_wasm_run_source_json_internal_with_procedure_fallt
             return json;
         }
     }
+    if (g_masm32_sim_wasm_program_console_max_bytes_override != 0U &&
+        g_masm32_sim_wasm_program_console_max_lines_override != 0U) {
+        if (vm_console_configure_limits(
+                &vm->program_console,
+                (size_t)g_masm32_sim_wasm_program_console_max_bytes_override,
+                (size_t)g_masm32_sim_wasm_program_console_max_lines_override
+            ) != VM_CONSOLE_STATUS_OK) {
+            const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, VM_EXEC_STATUS_INVALID_ARGUMENT, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON, startup_register_flag_mode, uninitialized_storage_visible_byte_mode);
+            vm_deinit(vm);
+            return json;
+        }
+    }
 
     exec_status = vm_set_root_ret_mode(vm, masm32_sim_wasm_map_root_ret_mode(root_ret_mode));
     if (exec_status != VM_EXEC_STATUS_OK) {
@@ -9912,6 +9930,48 @@ MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source
         MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE, false);
 }
 
+
+/// Runs source with test-only Program Console limits applied before execution.
+///
+/// Normal browser execution keeps the fixed Program Console limits. This
+/// native/test-facing helper exists so routine-specific atomic output-limit
+/// behavior can be covered without adding a browser setting.
+///
+/// @param source Null-terminated source text to execute.
+/// @param max_bytes Positive Program Console byte limit.
+/// @param max_lines Positive Program Console line-feed limit.
+/// @return Pointer to static JSON result storage.
+MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_program_console_limits(
+    const char *source,
+    uint32_t max_bytes,
+    uint32_t max_lines
+) {
+    const char *json = NULL;
+
+    if (max_bytes == 0U || max_lines == 0U) {
+        return masm32_sim_wasm_build_run_json(
+            MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT,
+            NULL,
+            NULL,
+            NULL,
+            VM_EXEC_STATUS_INVALID_ARGUMENT,
+            NULL,
+            NULL,
+            NULL,
+            false,
+            false,
+            MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+            MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO
+        );
+    }
+
+    g_masm32_sim_wasm_program_console_max_bytes_override = max_bytes;
+    g_masm32_sim_wasm_program_console_max_lines_override = max_lines;
+    json = masm32_sim_wasm_run_source_json(source);
+    g_masm32_sim_wasm_program_console_max_bytes_override = 0U;
+    g_masm32_sim_wasm_program_console_max_lines_override = 0U;
+    return json;
+}
 
 /// Test-facing Phase 86 synthetic Program Console output helper.
 ///

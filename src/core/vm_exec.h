@@ -22,7 +22,7 @@
  * operands against active automatic frames. Phase 84 captures and commits the
  * accepted same-file user-procedure INVOKE DWORD argument subset. ENTER, far
  * returns, general source-level ADDR outside accepted INVOKE arguments, and
- * non-exit Irvine32 routines remain later milestones; Phase 69 direct user-procedure CALL
+ * Irvine32 routines beyond the explicitly implemented virtual subset remain later milestones; Phase 69 direct user-procedure CALL
  * performs its internal checked return-token stack write, Phase 70 helper RET
  * performs its internal checked return-token stack read, and Phase 71 treats a
  * root-code-stream RET as successful program termination by default, and

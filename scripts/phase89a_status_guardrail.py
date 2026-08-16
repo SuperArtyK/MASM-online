@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
 @file phase89a_status_guardrail.py
-@brief Validates Phase 89 Irvine32 active documentation and metadata status.
+@brief Validates the active Irvine32 documentation and metadata status.
 
-The validator is intentionally limited to Phase 89A documentation/status
-contracts. It classifies files by role, evaluates bounded Markdown inventory
+The validator originated in Phase 89A and remains the active documentation/status
+guardrail. It classifies files by role, evaluates bounded Markdown inventory
 units, runs the focused positive/negative fixture matrix, and verifies that the
-active runtime metadata remains the Phase 89 WriteString contract.
+active runtime metadata matches the currently implemented Phase 90 WriteDec contract.
 """
 
 from __future__ import annotations
@@ -21,10 +21,10 @@ from dataclasses import dataclass
 from typing import Iterable, Sequence
 
 
-EXPECTED_PHASE = 89
-EXPECTED_PHASE_NAME = "Phase 89 - Irvine32 WriteString"
-EXPECTED_TOKEN = "phase-89-irvine32-writestring-contract-v1"
-EXPECTED_DEFAULT_EDITOR_SOURCE_SHA256 = "c335db3df801498c8325d61b281d87c12f898b484e406ab759c71bfe35b77947"
+EXPECTED_PHASE = 90
+EXPECTED_PHASE_NAME = "Phase 90 - Irvine32 WriteDec"
+EXPECTED_TOKEN = "phase-90-irvine32-writedec-contract-v1"
+EXPECTED_DEFAULT_EDITOR_SOURCE_SHA256 = "e27f7cf8ef9ddab5d81bcadd6cf8dc06a190364edcbfa2b4bf683a0cfbb77fe5"
 FIXTURE_MANIFEST = pathlib.Path("tests/static/phase89a/manifest.json")
 
 DEFERRED_PATTERNS = (
@@ -75,7 +75,7 @@ INVENTORY_PATTERNS = (
     r"\b(?:after|with) include irvine32\.inc\b",
 )
 FUTURE_SIMULATOR_PATTERNS = (
-    r"\bwrite(?:dec|int|hex|bin)\b",
+    r"\bwrite(?:int|hex|bin)\b",
     r"\bnumeric output\b",
     r"\binput routines?\b",
     r"\bdebug routines?\b",
@@ -399,8 +399,8 @@ def _status_segments(text: str) -> list[str]:
         if segment.strip()
     ]
     segments: list[str] = []
-    exact_form = re.compile(r"\b(?:direct\s+)?(?:call\s+|invoke\s+)?(?:crlf|writechar|writestring)\b")
-    exact_form_at_start = re.compile(r"^(?:direct\s+)?(?:call\s+|invoke\s+)?(?:crlf|writechar|writestring)\b")
+    exact_form = re.compile(r"\b(?:direct\s+)?(?:call\s+|invoke\s+)?(?:crlf|writechar|writestring|writedec)\b")
+    exact_form_at_start = re.compile(r"^(?:direct\s+)?(?:call\s+|invoke\s+)?(?:crlf|writechar|writestring|writedec)\b")
     for candidate in initial:
         if re.search(r"\bbeyond (?:the )?implemented\b", candidate):
             segments.append(candidate)
@@ -493,6 +493,11 @@ def _implemented_output_forms(text: str) -> set[str]:
                 forms.add("direct-writestring")
             elif not re.search(r"\binvoke\s+writestring\b", segment):
                 forms.add("direct-writestring")
+        if re.search(r"\bwritedec\b", segment):
+            if re.search(r"\b(?:call\s+writedec|direct\s+(?:call\s+)?writedec)\b", segment):
+                forms.add("direct-writedec")
+            elif not re.search(r"\binvoke\s+writedec\b", segment):
+                forms.add("direct-writedec")
     return forms
 
 def _looks_like_meta_test_instruction(text: str) -> bool:
@@ -528,11 +533,9 @@ def validate_active_markdown(text: str, path: str, *, line_offset: int = 0) -> l
 
         clauses = _status_segments(normalized)
         implemented_forms = _implemented_output_forms(normalized)
-        implemented_inventory = (
-            {"crlf", "direct-writechar"}.issubset(implemented_forms)
-            and _has_inventory_context(normalized)
-        )
-        if implemented_inventory and "direct-writestring" not in implemented_forms:
+        has_inventory_context = _has_inventory_context(normalized)
+        phase89_inventory = {"crlf", "direct-writechar"}.issubset(implemented_forms) and has_inventory_context
+        if phase89_inventory and "direct-writestring" not in implemented_forms:
             issues.append(
                 ValidationIssue(
                     "missing-direct-writestring",
@@ -540,6 +543,17 @@ def validate_active_markdown(text: str, path: str, *, line_offset: int = 0) -> l
                     unit.line_start,
                     unit.line_end,
                     "Current Irvine32 output inventory names Crlf and WriteChar but omits implemented direct WriteString.",
+                )
+            )
+        phase90_inventory = {"crlf", "direct-writechar", "direct-writestring"}.issubset(implemented_forms) and has_inventory_context
+        if phase90_inventory and "direct-writedec" not in implemented_forms:
+            issues.append(
+                ValidationIssue(
+                    "missing-direct-writedec",
+                    path,
+                    unit.line_start,
+                    unit.line_end,
+                    "Current Irvine32 output inventory names Crlf, WriteChar, and WriteString but omits implemented direct WriteDec.",
                 )
             )
 
@@ -554,6 +568,7 @@ def validate_active_markdown(text: str, path: str, *, line_offset: int = 0) -> l
                     "other than",
                     "outside the implemented",
                     "implemented direct call writestring",
+                    "implemented direct call writedec",
                     "implemented direct call writechar",
                     "implemented call crlf",
                     "implemented invoke crlf",
@@ -567,6 +582,7 @@ def validate_active_markdown(text: str, path: str, *, line_offset: int = 0) -> l
                     (r"\binvoke\s+crlf\b", "invoke-crlf-deferred", "Implemented zero-argument INVOKE Crlf"),
                     (r"\bcall\s+writechar\b|\bdirect\s+writechar\b", "direct-writechar-deferred", "Implemented direct CALL WriteChar"),
                     (r"\bcall\s+writestring\b|\bdirect\s+writestring\b", "direct-writestring-deferred", "Implemented direct CALL WriteString"),
+                    (r"\bcall\s+writedec\b|\bdirect\s+writedec\b", "direct-writedec-deferred", "Implemented direct CALL WriteDec"),
                 )
                 for pattern, code, description in deferred_implemented_forms:
                     if re.search(pattern, clause):
@@ -608,6 +624,16 @@ def validate_active_markdown(text: str, path: str, *, line_offset: int = 0) -> l
                         unit.line_start,
                         unit.line_end,
                         "INVOKE WriteChar is presented as implemented even though only direct CALL WriteChar is implemented.",
+                    )
+                )
+            if is_implemented and re.search(r"\binvoke\s+writedec\b", clause):
+                issues.append(
+                    ValidationIssue(
+                        "invoke-writedec-implemented",
+                        path,
+                        unit.line_start,
+                        unit.line_end,
+                        "INVOKE WriteDec is presented as implemented even though only direct CALL WriteDec is implemented.",
                     )
                 )
 
@@ -735,7 +761,7 @@ def validate_fixture(root: pathlib.Path, entry: dict[str, object]) -> FixtureRes
         else:
             issues = validate_metadata_payload(payload, str(fixture_path.relative_to(root)))
             if role == "future-token" and isinstance(payload, dict):
-                forbidden_keys = {f"phase{number}Token" for number in range(90, 96)}
+                forbidden_keys = {f"phase{number}Token" for number in range(91, 96)}
                 present = sorted(forbidden_keys.intersection(payload))
                 if present:
                     issues.append(
@@ -744,7 +770,7 @@ def validate_fixture(root: pathlib.Path, entry: dict[str, object]) -> FixtureRes
                             str(fixture_path.relative_to(root)),
                             1,
                             1,
-                            "Future Phase 90-95 runtime tokens must be absent before their owning phases: " + ", ".join(present),
+                            "Future Phase 91-95 runtime tokens must be absent before their owning phases: " + ", ".join(present),
                         )
                     )
     else:
@@ -911,7 +937,6 @@ def validate_repository_surface_roles(root: pathlib.Path) -> list[ValidationIssu
         "README.md",
         "docs/BUILDING_AND_DEVELOPMENT.md",
         "docs/FULL_IMPLEMENTATION_SPEC.md",
-        "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
         "docs/SUPPORTED_SYNTAX.md",
         "docs/TESTING_GUIDE.md",
         "docs/MILESTONE_HISTORY.md",
@@ -1076,7 +1101,7 @@ def validate_repository_metadata(root: pathlib.Path) -> list[ValidationIssue]:
 
 
 def validate_default_editor_source(root: pathlib.Path) -> list[ValidationIssue]:
-    """Verify that Phase 89A did not alter the browser default program."""
+    """Verify that the browser default program matches the accepted current source."""
 
     manifest = load_phase89a_manifest(root)
     expected = manifest.get("defaultEditorSourceSha256")
@@ -1084,7 +1109,7 @@ def validate_default_editor_source(root: pathlib.Path) -> list[ValidationIssue]:
         raise GuardrailInputError("Phase 89A manifest must define defaultEditorSourceSha256 as lowercase SHA-256")
     if expected != EXPECTED_DEFAULT_EDITOR_SOURCE_SHA256:
         raise GuardrailInputError(
-            "Phase 89A manifest defaultEditorSourceSha256 disagrees with the accepted Phase 89 default-source hash"
+            "status manifest defaultEditorSourceSha256 disagrees with the accepted Phase 90 default-source hash"
         )
 
     relative_path = "web/index.html"
@@ -1111,39 +1136,39 @@ def validate_default_editor_source(root: pathlib.Path) -> list[ValidationIssue]:
             relative_path,
             line,
             line + source.count("\n"),
-            f"Phase 89A must preserve the Phase 89 default editor source SHA-256 {expected}; found {actual}.",
+            f"Active status must use the Phase 90 default editor source SHA-256 {expected}; found {actual}.",
         )
     ]
 
 def validate_required_status_shapes(root: pathlib.Path) -> list[ValidationIssue]:
-    """Verify compact Phase 89A project-status surfaces and preserved runtime phase."""
+    """Verify compact current project-status surfaces and runtime phase."""
 
     issues: list[ValidationIssue] = []
     required_fragments = {
         "README.md": (
-            "| Current milestone | Phase 89A - Irvine32 Active Documentation and Static Status Guardrails |",
-            "| Runtime/source-run MASM behavior phase | Phase 89 - Irvine32 WriteString |",
-            "Phase 89A updates active documentation and static validation only; runtime/source-run MASM behavior remains Phase 89.",
+            "| Current milestone | Phase 90 - Irvine32 WriteDec |",
+            "| Runtime/source-run MASM behavior phase | Phase 90 - Irvine32 WriteDec |",
+            "Phase 90 adds direct virtual Irvine32 `WriteDec` output while preserving the previously implemented Irvine32 output forms and keeping future routine forms deferred.",
         ),
         "docs/BUILDING_AND_DEVELOPMENT.md": (
-            "Current milestone:\n\n- Phase 89A - Irvine32 Active Documentation and Static Status Guardrails",
-            "Runtime/source-run MASM behavior phase:\n\n- Phase 89 - Irvine32 WriteString",
+            "Current milestone:\n\n- Phase 90 - Irvine32 WriteDec",
+            "Runtime/source-run MASM behavior phase:\n\n- Phase 90 - Irvine32 WriteDec",
         ),
         "docs/SUPPORTED_SYNTAX.md": (
-            "Current milestone:\n\n- Phase 89A - Irvine32 Active Documentation and Static Status Guardrails",
-            "Runtime/source-run MASM behavior phase:\n\n- Phase 89 - Irvine32 WriteString",
+            "Current milestone:\n\n- Phase 90 - Irvine32 WriteDec",
+            "Runtime/source-run MASM behavior phase:\n\n- Phase 90 - Irvine32 WriteDec",
         ),
         "docs/TESTING_GUIDE.md": (
-            "Current milestone:\n\n- Phase 89A - Irvine32 Active Documentation and Static Status Guardrails",
-            "Runtime/source-run MASM behavior phase:\n\n- Phase 89 - Irvine32 WriteString",
+            "Current milestone:\n\n- Phase 90 - Irvine32 WriteDec",
+            "Runtime/source-run MASM behavior phase:\n\n- Phase 90 - Irvine32 WriteDec",
         ),
         "docs/MILESTONE_HISTORY.md": (
-            "Latest recorded completed milestone in this history file:\nPhase 89A - Irvine32 Active Documentation and Static Status Guardrails",
-            "Latest recorded runtime/source-run MASM behavior phase in this history file:\nPhase 89 - Irvine32 WriteString",
-            "## Phase 89A - Irvine32 Active Documentation and Static Status Guardrails",
+            "Latest recorded completed milestone in this history file:\nPhase 90 - Irvine32 WriteDec",
+            "Latest recorded runtime/source-run MASM behavior phase in this history file:\nPhase 90 - Irvine32 WriteDec",
+            "## Phase 90 - Irvine32 WriteDec",
         ),
         "web/index.html": (
-            "Milestone 89A: Irvine32 Active Documentation and Static Status Guardrails",
+            "Milestone 90: Irvine32 WriteDec",
         ),
     }
     for relative_path, fragments in required_fragments.items():
@@ -1152,11 +1177,11 @@ def validate_required_status_shapes(root: pathlib.Path) -> list[ValidationIssue]
             if fragment not in text:
                 issues.append(
                     ValidationIssue(
-                        "missing-phase89a-status",
+                        "missing-current-status",
                         relative_path,
                         1,
                         1,
-                        f"Required Phase 89A status fragment is missing: {fragment!r}.",
+                        f"Required current status fragment is missing: {fragment!r}.",
                     )
                 )
 
@@ -1178,7 +1203,7 @@ def validate_required_status_shapes(root: pathlib.Path) -> list[ValidationIssue]
     if diagnostic_start < 0 or diagnostic_end < 0:
         raise GuardrailInputError("FULL_IMPLEMENTATION_SPEC diagnostic-classification subsection markers are missing")
     diagnostic_section = spec_text[diagnostic_start:diagnostic_end]
-    if "Phase 89" in diagnostic_section:
+    if "Phase 90" in diagnostic_section:
         line = spec_text.count("\n", 0, diagnostic_start) + 1
         issues.append(
             ValidationIssue(
@@ -1186,7 +1211,7 @@ def validate_required_status_shapes(root: pathlib.Path) -> list[ValidationIssue]
                 "docs/FULL_IMPLEMENTATION_SPEC.md",
                 line,
                 line,
-                "Stable diagnostic classification text must not embed a Phase 89 current-status label.",
+                "Stable diagnostic classification text must not embed a Phase 90 current-status label.",
             )
         )
     return issues

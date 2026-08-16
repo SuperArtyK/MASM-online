@@ -29,6 +29,10 @@ from phase89a_status_guardrail import validate_phase89a_repository
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUILD_DIR = ROOT / "build" / "tests"
+
+# Windows native test executables need more than the default process stack because
+# some regression fixtures intentionally keep multiple full Vm values in one frame.
+WINDOWS_NATIVE_TEST_STACK_RESERVE_BYTES = 16 * 1024 * 1024
 REQUIRED_GROUPS = ["structure", "native", "source-run", "web", "diagnostics", "protocol", "static"]
 NATIVE_SUBGROUPS = [
     "native-parser",
@@ -534,10 +538,10 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "Phase 84 INVOKE accepts only full 32-bit register arguments")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 89A - Irvine32 Active Documentation and Static Status Guardrails")
+    assert_text_contains("README.md", "Phase 90 - Irvine32 WriteDec")
     assert_text_contains("README.md", "Runtime/source-run MASM behavior phase")
-    assert_text_contains("README.md", "Phase 89 - Irvine32 WriteString")
-    assert_text_contains("README.md", "Phase 89A updates active documentation and static validation only; runtime/source-run MASM behavior remains Phase 89.")
+    assert_text_contains("README.md", "Phase 90 - Irvine32 WriteDec")
+    assert_text_contains("README.md", "Phase 90 adds direct virtual Irvine32 `WriteDec` output while preserving the previously implemented Irvine32 output forms and keeping future routine forms deferred.")
     assert_text_not_contains("README.md", "parser-only `LOCAL` declaration metadata")
     assert_text_not_contains("README.md", "runtime stack-frame creation for locals")
     assert_text_contains("README.md", "callDepthLimit")
@@ -621,9 +625,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 89")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 90")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
-    assert_text_contains("web/src/protocol.js", "Phase 89 - Irvine32 WriteString")
+    assert_text_contains("web/src/protocol.js", "Phase 90 - Irvine32 WriteDec")
     assert_text_contains("scripts/phase89a_status_guardrail.py", "@file phase89a_status_guardrail.py")
     assert_text_contains("scripts/phase89a_status_guardrail.py", "def validate_phase89a_repository")
     assert_text_contains("tests/static/phase89a/manifest.json", "negative_stale_later_inventory.md")
@@ -653,6 +657,12 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_exec.c", "vm_exec_execute_rotate_left")
     assert_text_contains("src/core/vm_exec.c", "vm_exec_execute_rotate_right")
     assert_text_contains("src/core/vm_exec.c", "vm_exec_execute_exit")
+    assert_text_contains("src/core/vm_exec.c", "Phase 90 appends the shortest unsigned decimal representation of EAX for direct virtual Irvine32 WriteDec")
+    assert_text_contains("src/parser/parser.c", "Phase 90 direct WriteDec lowering are supported")
+    assert_text_contains("tests/core/test_vm_exec.c", "Phase 90 virtual Irvine32 WriteDec output")
+    assert_text_not_contains("tests/core/test_wasm_source_run.c", "Current metadata should report numeric Phase 89")
+    assert_text_not_contains("tests/core/test_wasm_source_run.c", "Current metadata should report the Phase 89 output contract")
+    assert_text_contains("docs/TESTING_GUIDE.md", "except for direct `CALL WriteChar`, direct `CALL WriteString`, and direct `CALL WriteDec`")
     assert_text_contains("src/core/vm_exec.c", "vm_exec_execute_mul")
     assert_text_contains("src/parser/parser.c", "Unknown instruction or virtual Irvine32 terminator. Add INCLUDE Irvine32.inc to use exit.")
     assert_text_contains("tests/core/test_parser.c", "test_phase42_irvine32_exit_terminator_parser_paths")
@@ -696,7 +706,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 89 Irvine32 WriteString passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 90 Irvine32 WriteDec passed.")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "through Phase 78A limited OPTION NOKEYWORD coverage")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "Phase 78A default source-run metadata")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "numeric Phase 78 metadata")
@@ -793,6 +803,28 @@ def executable_output_path(output_name: str) -> pathlib.Path:
     return BUILD_DIR / executable_name
 
 
+def native_test_linker_args(platform_name: str | None = None) -> list[str]:
+    """Return platform-specific linker arguments for native test executables.
+
+    The modeled VM is intentionally large enough that several long-standing native
+    regression fixtures exceed the ordinary Windows executable stack reserve when
+    compiled without an explicit linker policy.  Reserve 16 MiB for Windows test
+    binaries so the same fixtures remain portable without changing simulator state
+    storage or production runtime behavior.
+
+    Args:
+        platform_name: Optional ``os.name`` value used by runner self-tests.
+
+    Returns:
+        Linker arguments for the selected platform.
+    """
+
+    selected_platform = os.name if platform_name is None else platform_name
+    if selected_platform == "nt":
+        return ["-Xlinker", f"/STACK:{WINDOWS_NATIVE_TEST_STACK_RESERVE_BYTES}"]
+    return []
+
+
 def compile_c_binary(output_name: str, sources: list[str], *, subgroup: str | None = None) -> pathlib.Path:
     """Compile one C test-support binary.
 
@@ -818,6 +850,7 @@ def compile_c_binary(output_name: str, sources: list[str], *, subgroup: str | No
             "-pedantic",
             "-Isrc/core",
             "-Isrc/parser",
+            *native_test_linker_args(),
             *sources,
             "-o",
             str(output),
@@ -1136,10 +1169,10 @@ def assert_default_editor_source_run_smoke() -> None:
         raise TestFailure(f"default-editor source-run returned invalid JSON: {error}") from error
 
     expected_values = {
-        "phase": 89,
+        "phase": 90,
         "phaseSuffix": "",
-        "phaseName": "Phase 89 - Irvine32 WriteString",
-        "sourceRunOutputContract": "phase-89-irvine32-writestring-contract-v1",
+        "phaseName": "Phase 90 - Irvine32 WriteDec",
+        "sourceRunOutputContract": "phase-90-irvine32-writedec-contract-v1",
         "ok": True,
         "status": "ok",
     }
@@ -1151,8 +1184,8 @@ def assert_default_editor_source_run_smoke() -> None:
             )
 
     program_console = payload.get("programConsole")
-    if not isinstance(program_console, dict) or program_console.get("text") != "Hello from WriteString\n":
-        raise TestFailure("default-editor source-run must produce exactly 'Hello from WriteString\n' in Program Console")
+    if not isinstance(program_console, dict) or program_console.get("text") != "4294967295":
+        raise TestFailure("default-editor source-run must produce exactly '4294967295' in Program Console")
     simulator_messages = payload.get("simulatorMessages")
     if not isinstance(simulator_messages, list):
         raise TestFailure("default-editor source-run must keep Simulator Messages as a separate list")
@@ -1885,7 +1918,7 @@ def assert_phase71b2_stale_milestone_context_checks() -> None:
 
 
 def assert_current_status_and_harness_documented() -> None:
-    """Verify Phase 89A status, concise status surfaces, and harness documentation wording."""
+    """Verify current Phase 90 status, concise status surfaces, and harness documentation wording."""
 
     def read_repo_text(path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
@@ -1905,8 +1938,8 @@ def assert_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 89 - Irvine32 WriteString",
-            "Phase 89A updates active documentation and static validation only; runtime/source-run MASM behavior remains Phase 89.",
+            "Phase 90 - Irvine32 WriteDec",
+            "Phase 90 adds direct virtual Irvine32 `WriteDec` output while preserving the previously implemented Irvine32 output forms and keeping future routine forms deferred.",
             "stack-overflow",
             "stack-underflow",
             "source-level 32-bit `push` for registers, immediates, and DWORD memory sources",
@@ -1974,8 +2007,8 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 89 - Irvine32 WriteString",
-            "Phase 89A updates active documentation and static validation only; runtime/source-run MASM behavior metadata and the Phase 89 WriteString output contract remain unchanged.",
+            "Phase 90 - Irvine32 WriteDec",
+            "Phase 90 advances runtime/source-run MASM behavior to direct virtual Irvine32 `WriteDec` and uses the Phase 90 WriteDec output contract.",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
             "stale-wasm-output-contract",
@@ -2021,10 +2054,10 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Current milestone:",
-            "Phase 89A - Irvine32 Active Documentation and Static Status Guardrails",
+            "Phase 90 - Irvine32 WriteDec",
             "Runtime/source-run MASM behavior phase:",
-            "Phase 89 - Irvine32 WriteString",
-            "direct virtual Irvine32 `WriteString` are executable in the current subset after `INCLUDE Irvine32.inc`",
+            "Phase 90 - Irvine32 WriteDec",
+            "direct virtual Irvine32 `WriteDec` are executable in the current subset after `INCLUDE Irvine32.inc`",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
             "Phase 79 allocates runtime stack storage for accepted LOCAL metadata",
             "selected-entry `ENDP` is not an implicit successful terminator",
@@ -2076,9 +2109,9 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 89A - Irvine32 Active Documentation and Static Status Guardrails",
+            "Phase 90 - Irvine32 WriteDec",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
-            "Phase 89 - Irvine32 WriteString",
+            "Phase 90 - Irvine32 WriteDec",
             "phase-71e-entry-procedure-end-mode-output-contract-v1",
             "This history file records completed milestones and audit evidence.",
             "It is not the phase-order authority",
@@ -2253,11 +2286,11 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 89A - Irvine32 Active Documentation and Static Status Guardrails",
+            "Phase 90 - Irvine32 WriteDec",
             "Runtime/source-run MASM behavior phase:",
-            "Phase 89 - Irvine32 WriteString",
+            "Phase 90 - Irvine32 WriteDec",
             "Phase 79 adds tests for automatic LOCAL frame setup and release",
-            "phase-89-irvine32-writestring-contract-v1",
+            "phase-90-irvine32-writedec-contract-v1",
             "local-frame-entry-unsupported",
             "invalid-frame-state",
             "stack-overflow",
@@ -2287,7 +2320,7 @@ def assert_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 89A: Irvine32 Active Documentation and Static Status Guardrails",
+            "Milestone 90: Irvine32 WriteDec",
             "INCLUDE Irvine32.inc",
                                                                         "exit",
             "final-registers",
@@ -2337,7 +2370,7 @@ def assert_current_status_and_harness_documented() -> None:
             "sourceRunOutputContract",
             "createMismatchedRuntimePhaseDiagnostic",
             "Number.isInteger(runResult.phase)",
-            "IMPLEMENTED_PHASE = 89",
+            "IMPLEMENTED_PHASE = 90",
         ],
     )
     assert_all_text_not_contains(
@@ -2738,6 +2771,19 @@ def assert_diagnostic_subgroup_help_and_docs_match() -> None:
     )
 
 
+def assert_windows_native_test_stack_reserve_contract() -> None:
+    """Verify the Windows native-test linker stack policy and POSIX no-op path."""
+
+    expected_windows = [
+        "-Xlinker",
+        f"/STACK:{WINDOWS_NATIVE_TEST_STACK_RESERVE_BYTES}",
+    ]
+    if native_test_linker_args("nt") != expected_windows:
+        raise TestFailure("Windows native-test stack reserve linker arguments drifted")
+    if native_test_linker_args("posix") != []:
+        raise TestFailure("non-Windows native tests must not receive Windows linker arguments")
+
+
 def assert_native_and_source_run_subgroup_help_and_docs_match() -> None:
     """Verify Phase 71B1 native and source-run subgroups match runner help and docs."""
 
@@ -2975,6 +3021,7 @@ def run_static_tests() -> None:
     assert_fixture_inventory_documented()
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
+    assert_windows_native_test_stack_reserve_contract()
     assert_native_and_source_run_subgroup_help_and_docs_match()
     assert_source_run_subgroup_inventory_table_present()
     assert_diagnostic_subgroup_help_and_docs_match()

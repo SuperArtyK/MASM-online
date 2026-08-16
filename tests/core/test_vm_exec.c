@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 89 Irvine32 WriteString coverage.
+ * @brief Unit tests for the VM executor through Phase 90 Irvine32 WriteDec coverage.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
@@ -8,7 +8,7 @@
  * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end-mode compatibility, Phase 71F explicit-exit fallthrough regression coverage, Phase 72
  * call-depth resource-limit coverage, Phase 72A source-level PUSH/POP,
  * Phase 73 LEAVE frame teardown, Phase 74 RET imm16 cleanup, and
- * Phase 77 PROC USES runtime save/restore, Phase 79 automatic LOCAL stack allocation/lifetime, Phase 80 LOCAL operand active-frame checks, Phase 87 virtual Irvine32 Crlf output, and Phase 88 virtual Irvine32 WriteChar output, and Phase 89 virtual Irvine32 WriteString output. They intentionally avoid parser and browser UI behavior except for the Phase 42 virtual exit terminator and focused Irvine32 routine contracts.
+ * Phase 77 PROC USES runtime save/restore, Phase 79 automatic LOCAL stack allocation/lifetime, Phase 80 LOCAL operand active-frame checks, Phase 87 virtual Irvine32 Crlf output, Phase 88 virtual Irvine32 WriteChar output, Phase 89 virtual Irvine32 WriteString output, and Phase 90 virtual Irvine32 WriteDec output. They intentionally avoid parser and browser UI behavior except for the Phase 42 virtual exit terminator and focused Irvine32 routine contracts.
  */
 
 #include <stdbool.h>
@@ -975,6 +975,128 @@ static int test_phase88_irvine32_writechar_limit_failure_is_atomic(void) {
     return failures;
 }
 
+
+/// Verifies Phase 90 WriteDec formats unsigned EAX values and preserves VM state.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase90_irvine32_writedec_formats_and_preserves_state(void) {
+    int failures = 0;
+    static const struct {
+        uint32_t value;
+        const char *expected;
+    } cases[] = {
+        {0U, "0"},
+        {1U, "1"},
+        {9U, "9"},
+        {10U, "10"},
+        {99U, "99"},
+        {100U, "100"},
+        {UINT32_MAX, "4294967295"}
+    };
+    size_t case_index = 0U;
+
+    for (case_index = 0U; case_index < sizeof(cases) / sizeof(cases[0]); case_index += 1U) {
+        Vm vm;
+        uint32_t value = 0U;
+        const VmExecDelta *delta = NULL;
+        const VmIrInstruction program[] = {
+            {VM_IR_OPCODE_IRVINE32_WRITEDEC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 20U, "call WriteDec", 0U}
+        };
+
+        failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteDec formatting test");
+        failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteDec formatting program should load");
+        failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, cases[case_index].value) ? 0 : record_failure("seed EAX should succeed before WriteDec");
+        failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0x22222222U) ? 0 : record_failure("seed EBX should succeed before WriteDec");
+        failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_CF) ? 0 : record_failure("seed CF should succeed before WriteDec");
+        failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 19U, 1U, 190U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity before WriteDec should succeed");
+
+        failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "WriteDec should execute successfully");
+        failures += expect_string(vm_console_text(vm_program_console(&vm)), cases[case_index].expected, "WriteDec should emit the shortest unsigned decimal representation");
+        failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 0U, "WriteDec should not change Program Console line count");
+        failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &value) ? 0 : record_failure("EAX read after WriteDec should succeed");
+        failures += expect_u32(value, cases[case_index].value, "WriteDec should preserve EAX");
+        failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &value) ? 0 : record_failure("EBX read after WriteDec should succeed");
+        failures += expect_u32(value, 0x22222222U, "WriteDec should preserve unrelated registers");
+        failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "WriteDec should preserve CF");
+        failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 19U, "WriteDec should preserve OF validity metadata");
+        delta = vm_last_delta(&vm);
+        failures += expect_size(delta->register_change_count, 0U, "WriteDec should report no register changes");
+        failures += expect_size(delta->flag_change_count, 0U, "WriteDec should report no flag changes");
+        failures += expect_size(delta->memory_change_count, 0U, "WriteDec should report no memory changes");
+        failures += expect_size(delta->memory_access_count, 0U, "WriteDec should report no memory accesses");
+
+        vm_deinit(&vm);
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 90 WriteDec exact-fit success and one-byte-short atomic failure.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase90_irvine32_writedec_output_limits_are_atomic(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t value = 0U;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmExecDelta *delta = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_IRVINE32_WRITEDEC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 21U, "call WriteDec", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteDec exact-fit test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteDec exact-fit program should load");
+    failures += expect_status(vm_append_program_console_output(&vm, "pre", 3U, NULL), VM_EXEC_STATUS_OK, "WriteDec exact-fit prefix should commit");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 13U, 1U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "WriteDec exact-fit byte limit should configure");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, UINT32_MAX) ? 0 : record_failure("seed UINT32_MAX before exact-fit WriteDec should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "WriteDec should succeed with exact remaining capacity");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "pre4294967295", "WriteDec exact-fit should append the complete candidate");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 0U, "WriteDec exact-fit should not change line count");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteDec line-capacity test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteDec line-capacity program should load");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 64U, 1U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "WriteDec line-capacity limit should configure");
+    failures += expect_status(vm_append_program_console_output(&vm, "ok\n", 3U, NULL), VM_EXEC_STATUS_OK, "WriteDec line-capacity prefix should fill the permitted line count");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 10U) ? 0 : record_failure("seed EAX before WriteDec line-capacity test should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "WriteDec should succeed when the existing line count is already at its limit");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "ok\n10", "WriteDec should append digits without consuming another Program Console line");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 1U, "WriteDec should preserve an already-full Program Console line count");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteDec one-byte-short test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteDec one-byte-short program should load");
+    failures += expect_status(vm_append_program_console_output(&vm, "pre", 3U, NULL), VM_EXEC_STATUS_OK, "WriteDec one-byte-short prefix should commit");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 12U, 1U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "WriteDec one-byte-short limit should configure");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, UINT32_MAX) ? 0 : record_failure("seed UINT32_MAX before failing WriteDec should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0xABCDEF01U) ? 0 : record_failure("seed EBX before failing WriteDec should succeed");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_ZF) ? 0 : record_failure("seed ZF before failing WriteDec should succeed");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 20U, 1U, 200U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity before failing WriteDec should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED, "WriteDec should fail when capacity is one byte short");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "pre", "WriteDec output-limit failure should append no partial digits");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 0U, "WriteDec output-limit failure should preserve line count");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &value) ? 0 : record_failure("EAX read after failing WriteDec should succeed");
+    failures += expect_u32(value, UINT32_MAX, "WriteDec failure should preserve EAX");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &value) ? 0 : record_failure("EBX read after failing WriteDec should succeed");
+    failures += expect_u32(value, 0xABCDEF01U, "WriteDec failure should preserve unrelated registers");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "WriteDec failure should preserve flags");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 20U, "WriteDec failure should preserve flag-validity metadata");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta->register_change_count, 0U, "WriteDec failure should report no register changes");
+    failures += expect_size(delta->flag_change_count, 0U, "WriteDec failure should report no flag changes");
+    failures += expect_size(delta->memory_change_count, 0U, "WriteDec failure should report no memory changes");
+    failures += expect_size(delta->memory_access_count, 0U, "WriteDec failure should report no memory accesses");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED) {
+        failures += record_failure("WriteDec one-byte-short failure should record the shared output-limit diagnostic");
+    } else {
+        failures += expect_u32(diagnostic->instruction.source_line, 21U, "WriteDec output-limit diagnostic should preserve the call line");
+        failures += expect_string(diagnostic->instruction.source_text, "call WriteDec", "WriteDec output-limit diagnostic should preserve the full call instruction text");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
 
 /// Verifies Phase 89 WriteString scans checked VM memory and preserves state.
 ///
@@ -6826,6 +6948,9 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_IRVINE32_WRITECHAR), "writechar") != 0) {
         failures += record_failure("WriteChar opcode name should be writechar");
     }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_IRVINE32_WRITEDEC), "writedec") != 0) {
+        failures += record_failure("WriteDec opcode name should be writedec");
+    }
     if (vm_ir_opcode_name((VmIrOpcode)99) != NULL) {
         failures += record_failure("invalid opcode name should be NULL");
     }
@@ -6882,6 +7007,8 @@ int main(void) {
     failures += test_phase88_irvine32_writechar_limit_failure_is_atomic();
     failures += test_phase89_irvine32_writestring_appends_bytes_and_preserves_state();
     failures += test_phase89_irvine32_writestring_failures_are_atomic();
+    failures += test_phase90_irvine32_writedec_formats_and_preserves_state();
+    failures += test_phase90_irvine32_writedec_output_limits_are_atomic();
     failures += test_neg_register_memory_and_flags();
     failures += test_phase20_error_paths();
     failures += test_adc_register_carry_propagation();
@@ -6991,6 +7118,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 89 Irvine32 WriteString coverage passed.");
+    puts("Executor tests through Phase 90 Irvine32 WriteDec coverage passed.");
     return 0;
 }

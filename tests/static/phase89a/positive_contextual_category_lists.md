@@ -2,7 +2,7 @@
 
 Future Irvine32 simulator work includes:
 
-- `WriteDec`.
+- `WriteInt`.
 - `INVOKE WriteString`.
 
 Permanent product non-goals include:

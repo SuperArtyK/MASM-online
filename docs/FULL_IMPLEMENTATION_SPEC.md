@@ -1680,7 +1680,7 @@ External/API non-goal forms include:
 - host-filesystem include or library targets;
 - far calls, segmented calls, or native-address calls when they imply native x86, PE, Windows, or linker behavior.
 
-Recognized Irvine32 routine and terminator names are not user procedure symbols. Before the owning Irvine32 routine-dispatch phase implements a specific routine, a source form such as `call WriteDec` must be classified as a recognized-but-deferred or recognized-but-unsupported Irvine32 routine call, not as a user-procedure call. Implemented direct forms such as `call WriteString` must route through their simulator-defined Irvine32 intrinsic path rather than user-procedure lookup.
+Recognized Irvine32 routine and terminator names are not user procedure symbols. Before the owning Irvine32 routine-dispatch phase implements a specific routine, a source form such as `call WriteInt` must be classified as a recognized-but-deferred or recognized-but-unsupported Irvine32 routine call, not as a user-procedure call. Implemented direct forms such as `call WriteString` and `call WriteDec` must route through their simulator-defined Irvine32 intrinsic paths rather than user-procedure lookup.
 
 A future phase may implement selected Irvine32 routine dispatch, but that work must remain separate from direct user-procedure `CALL`. Direct user-procedure `CALL` must not execute, alias, shadow, or special-case Irvine32 routine names as host callbacks, external imports, WinAPI calls, PE import thunks, linker symbols, or native procedures.
 
@@ -3871,9 +3871,9 @@ External/API calls are not a future CALL target category. They are non-goals. Di
 CALL target classification must preserve this boundary:
 
 - `call UserProc` may become a user procedure call only when `UserProc PROC` exists and the CALL phase accepts direct user-procedure calls.
-- `call WriteString` must classify through the Irvine32 registry, not through the user procedure table.
-- Before the owning Irvine32 dispatch phase implements a recognized routine such as `WriteDec`, `call WriteDec` must produce a recognized-deferred or recognized-unsupported Irvine32 diagnostic.
-- After Phase 89, direct `call WriteString` routes to simulator-defined Irvine32 behavior, but `WriteString` still does not become an ordinary user procedure symbol.
+- `call WriteString` and `call WriteDec` must classify through the Irvine32 registry, not through the user procedure table.
+- Before the owning Irvine32 dispatch phase implements a recognized routine such as `WriteInt`, `call WriteInt` must produce a recognized-deferred or recognized-unsupported Irvine32 diagnostic.
+- After Phase 89, direct `call WriteString` routes to simulator-defined Irvine32 behavior, and after Phase 90 direct `call WriteDec` does likewise; neither routine becomes an ordinary user procedure symbol.
 - A user declaration such as `WriteString PROC` must be rejected or otherwise handled through the reserved-word/registry collision policy. It must not silently shadow the virtual Irvine32 routine.
 
 `OPTION CASEMAP:NONE` affects accepted user-defined symbols. It does not make recognized Irvine32 routine names case-sensitive, and it does not make recognized Irvine32 routine names available as user procedure names.
@@ -4113,12 +4113,12 @@ WriteChar:
   INVOKE WriteChar remains future-owned until a later accepted phase implements that source form.
 
 WriteDec:
-  Future-owned until Phase 90 or a later accepted replacement phase implements it.
-  Accepted executable source forms after INCLUDE Irvine32.inc, once implemented:
+  Implemented by Phase 90 for the direct virtual Irvine32 call form below.
+  Accepted executable source forms after INCLUDE Irvine32.inc:
     call WriteDec
   Matching must be case-insensitive for the Irvine32 routine name even when OPTION CASEMAP:NONE is active.
-  CALL WriteDec without INCLUDE Irvine32.inc must be an assembly error after the routine is implemented.
-  Bare WriteDec must be an assembly error after the routine is implemented.
+  CALL WriteDec without INCLUDE Irvine32.inc is an assembly error.
+  Bare WriteDec after INCLUDE Irvine32.inc is an assembly error.
   INVOKE WriteDec remains future-owned until a later accepted phase implements that exact source form.
   Input: EAX interpreted as an unsigned 32-bit integer.
   Output: append the shortest base-10 unsigned decimal representation of EAX to Program Console.
@@ -4295,7 +4295,7 @@ If a precise future phase is known, the diagnostic should name both the phase nu
 Acceptable diagnostic wording examples:
 
 ```text
-WriteDec is a recognized Irvine32 routine, but executable numeric Irvine32 output routines are deferred to Phase <N> - <phase title>.
+WriteInt is a recognized Irvine32 routine, but executable signed-decimal Irvine32 output is deferred to its owning later phase.
 ```
 
 ```text

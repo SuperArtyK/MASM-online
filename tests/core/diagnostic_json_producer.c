@@ -618,6 +618,10 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     int has_call_depth_limit = 0;
     uint32_t writestring_scan_limit = 0U;
     int has_writestring_scan_limit = 0;
+    uint32_t program_console_max_bytes = 0U;
+    uint32_t program_console_max_lines = 0U;
+    int has_program_console_max_bytes = 0;
+    int has_program_console_max_lines = 0;
 
     if (source == NULL) {
         return diagnostic_json_producer_fail("source fixture was not loaded");
@@ -644,8 +648,19 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_WRITESTRING_SCAN_LIMIT", &writestring_scan_limit, &has_writestring_scan_limit) != 0) {
         return 1;
     }
+    if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_PROGRAM_CONSOLE_MAX_BYTES", &program_console_max_bytes, &has_program_console_max_bytes) != 0) {
+        return 1;
+    }
+    if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_PROGRAM_CONSOLE_MAX_LINES", &program_console_max_lines, &has_program_console_max_lines) != 0) {
+        return 1;
+    }
+    if (has_program_console_max_bytes != has_program_console_max_lines) {
+        return diagnostic_json_producer_fail("Program Console byte and line limit overrides must be provided together");
+    }
 
-    if (has_writestring_scan_limit) {
+    if (has_program_console_max_bytes && has_program_console_max_lines) {
+        json = masm32_sim_wasm_run_source_json_with_program_console_limits(source, program_console_max_bytes, program_console_max_lines);
+    } else if (has_writestring_scan_limit) {
         json = masm32_sim_wasm_run_source_json_with_writestring_scan_limit(source, writestring_scan_limit);
     } else if (has_call_depth_limit || has_root_ret_mode || has_procedure_fallthrough_policy || has_entry_procedure_end_mode) {
         json = masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_entry_end_and_call_depth_settings(

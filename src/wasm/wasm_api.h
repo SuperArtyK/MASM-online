@@ -199,6 +199,22 @@ const char *masm32_sim_wasm_run_source_json_with_writestring_scan_limit(
     uint32_t scan_limit_bytes
 );
 
+/// Parses and executes source with test-only Program Console limits.
+///
+/// This helper exists for native and rendered-diagnostic boundary tests. Normal
+/// browser execution continues to use the fixed Program Console limits and does
+/// not expose these values as user-facing settings.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param max_bytes Positive Program Console byte limit applied before execution.
+/// @param max_lines Positive Program Console line-feed limit applied before execution.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_program_console_limits(
+    const char *source,
+    uint32_t max_bytes,
+    uint32_t max_lines
+);
+
 /// Parses and executes source, then applies test-only synthetic Program Console output.
 ///
 /// This helper is restricted to native tests for Program Console output-limit

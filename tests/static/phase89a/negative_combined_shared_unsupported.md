@@ -1,3 +1,3 @@
 # Shared unsupported status across different categories
 
-`WriteDec` and WinAPI execution remain unsupported.
+`WriteInt` and WinAPI execution remain unsupported.

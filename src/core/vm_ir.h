@@ -156,6 +156,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_IRVINE32_WRITECHAR,
     /// Append the null-terminated byte string addressed by EDX for virtual Irvine32 `WriteString`.
     VM_IR_OPCODE_IRVINE32_WRITESTRING,
+    /// Append the unsigned decimal representation of EAX for virtual Irvine32 `WriteDec`.
+    VM_IR_OPCODE_IRVINE32_WRITEDEC,
     /// Number of currently supported operation codes.
     VM_IR_OPCODE_COUNT
 } VmIrOpcode;
