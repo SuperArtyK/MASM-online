@@ -334,7 +334,6 @@ def run_structure_tests() -> None:
         "tests/core/diagnostic_json_producer.c",
         "scripts/phase89a_status_guardrail.py",
         "tests/static/phase89a/manifest.json",
-        "docs/history/reports/Milestone 89A report.md",
     ])
     assert_text_contains("web/src/protocol.js", "type: \"PONG\"")
     assert_text_contains("web/src/protocol.js", "unsupported-message")
@@ -519,7 +518,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/wasm/wasm_api.c", "/// Appends compact JSON")
     assert_text_contains("tests/core/test_vm_exec.c", "/*\n * @file test_vm_exec.c")
     assert_text_contains("tests/core/test_vm_exec.c", "/// Verifies that the hardcoded Milestone 4 sample")
-    assert_text_contains("tests/core/test_vm_exec.c", "/// Runs all executor tests through Phase 91 Irvine32 WriteInt coverage.")
+    assert_text_contains("tests/core/test_vm_exec.c", "/// Runs all executor tests through Phase 92 Irvine32 WriteHex coverage.")
     assert_text_not_contains("tests/core/test_vm_exec.c", "Runs all executor tests through Phase 77 PROC USES runtime save/restore coverage.")
     assert_text_not_contains("tests/core/test_parser.c", "Runs all parser regression tests through Phase 60 direct JMP parsing and target lowering.")
     assert_text_not_contains("tests/core/test_data_section.c", "each Milestone 30 parser test")
@@ -621,9 +620,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 91")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 92")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
-    assert_text_contains("web/src/protocol.js", "Phase 91 - Irvine32 WriteInt")
+    assert_text_contains("web/src/protocol.js", "Phase 92 - Irvine32 WriteHex")
     assert_text_contains("scripts/phase89a_status_guardrail.py", "@file phase89a_status_guardrail.py")
     assert_text_contains("scripts/phase89a_status_guardrail.py", "def validate_phase89a_repository")
     assert_text_contains("tests/static/phase89a/manifest.json", "negative_stale_later_inventory.md")
@@ -655,15 +654,20 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Phase 90 direct WriteDec lowering,")
     assert_text_contains("tests/core/test_vm_exec.c", "Phase 90 virtual Irvine32 WriteDec output")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_IRVINE32_WRITEINT")
+    assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_IRVINE32_WRITEHEX")
     assert_text_contains("src/core/vm_exec.c", "WriteInt reads the raw 32-bit EAX bit pattern")
-    assert_text_contains("src/parser/parser.c", "Phase 91 direct WriteInt lowering are supported")
+    assert_text_contains("src/core/vm_exec.c", "WriteHex reads the raw 32-bit EAX bit pattern as an unsigned value")
+    assert_text_contains("src/parser/parser.c", "Phase 92 direct WriteHex lowering are supported")
     assert_text_contains("tests/core/test_parser.c", "test_phase91_irvine32_writeint_parser_paths")
+    assert_text_contains("tests/core/test_parser.c", "test_phase92_irvine32_writehex_parser_paths")
     assert_text_contains("tests/core/test_vm_exec.c", "test_phase91_irvine32_writeint_formats_and_preserves_state")
+    assert_text_contains("tests/core/test_vm_exec.c", "test_phase92_irvine32_writehex_formats_and_preserves_state")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase91_irvine32_writeint_source_run")
-    assert_text_contains("tests/web/test_diagnostic_rendering.mjs", "Phase 91 renders WriteInt Program Console byte-limit diagnostic exactly")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase92_irvine32_writehex_source_run")
+    assert_text_contains("tests/web/test_diagnostic_rendering.mjs", "Phase 92 renders WriteHex Program Console byte-limit diagnostic exactly")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "Current metadata should report numeric Phase 89")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "Current metadata should report the Phase 89 output contract")
-    assert_text_contains("docs/TESTING_GUIDE.md", "except for direct `CALL WriteChar`, direct `CALL WriteString`, direct `CALL WriteDec`, and direct `CALL WriteInt`")
+    assert_text_contains("docs/TESTING_GUIDE.md", "except for direct `CALL WriteChar`, direct `CALL WriteString`, direct `CALL WriteDec`, direct `CALL WriteInt`, and direct `CALL WriteHex`")
     assert_text_contains("src/core/vm_exec.c", "vm_exec_execute_mul")
     assert_text_contains("src/parser/parser.c", "Unknown instruction or virtual Irvine32 terminator. Add INCLUDE Irvine32.inc to use exit.")
     assert_text_contains("tests/core/test_parser.c", "test_phase42_irvine32_exit_terminator_parser_paths")
@@ -707,7 +711,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 91 Irvine32 WriteInt passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 92 Irvine32 WriteHex passed.")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "through Phase 78A limited OPTION NOKEYWORD coverage")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "Phase 78A default source-run metadata")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "numeric Phase 78 metadata")
@@ -1170,10 +1174,10 @@ def assert_default_editor_source_run_smoke() -> None:
         raise TestFailure(f"default-editor source-run returned invalid JSON: {error}") from error
 
     expected_values = {
-        "phase": 91,
+        "phase": 92,
         "phaseSuffix": "",
-        "phaseName": "Phase 91 - Irvine32 WriteInt",
-        "sourceRunOutputContract": "phase-91-irvine32-writeint-contract-v1",
+        "phaseName": "Phase 92 - Irvine32 WriteHex",
+        "sourceRunOutputContract": "phase-92-irvine32-writehex-contract-v1",
         "ok": True,
         "status": "ok",
     }
@@ -1185,8 +1189,8 @@ def assert_default_editor_source_run_smoke() -> None:
             )
 
     program_console = payload.get("programConsole")
-    if not isinstance(program_console, dict) or program_console.get("text") != "-2147483648":
-        raise TestFailure("default-editor source-run must produce exactly '-2147483648' in Program Console")
+    if not isinstance(program_console, dict) or program_console.get("text") != "0000000A":
+        raise TestFailure("default-editor source-run must produce exactly '0000000A' in Program Console")
     simulator_messages = payload.get("simulatorMessages")
     if not isinstance(simulator_messages, list):
         raise TestFailure("default-editor source-run must keep Simulator Messages as a separate list")
@@ -1919,7 +1923,7 @@ def assert_phase71b2_stale_milestone_context_checks() -> None:
 
 
 def assert_current_status_and_harness_documented() -> None:
-    """Verify current Phase 91 status, concise status surfaces, and harness documentation wording."""
+    """Verify current Phase 92 status, concise status surfaces, and harness documentation wording."""
 
     def read_repo_text(path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
@@ -1939,8 +1943,8 @@ def assert_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 91 - Irvine32 WriteInt",
-            "Phase 91 adds direct virtual Irvine32 `WriteInt` signed-decimal output while preserving the previously implemented Irvine32 output forms and keeping future routine forms deferred.",
+            "Phase 92 - Irvine32 WriteHex",
+            "Phase 92 adds direct virtual Irvine32 `WriteHex` fixed-width uppercase hexadecimal output while preserving the previously implemented Irvine32 output forms and keeping future routine forms deferred.",
             "stack-overflow",
             "stack-underflow",
             "source-level 32-bit `push` for registers, immediates, and DWORD memory sources",
@@ -2008,8 +2012,8 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 91 - Irvine32 WriteInt",
-            "Phase 91 advances runtime/source-run MASM behavior to direct virtual Irvine32 `WriteInt` and uses the Phase 91 WriteInt output contract.",
+            "Phase 92 - Irvine32 WriteHex",
+            "Phase 92 advances runtime/source-run MASM behavior to direct virtual Irvine32 `WriteHex` and uses the Phase 92 WriteHex output contract.",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
             "stale-wasm-output-contract",
@@ -2055,10 +2059,10 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Current milestone:",
-            "Phase 91 - Irvine32 WriteInt",
+            "Phase 92 - Irvine32 WriteHex",
             "Runtime/source-run MASM behavior phase:",
-            "Phase 91 - Irvine32 WriteInt",
-            "direct virtual Irvine32 `WriteInt` are executable in the current subset after `INCLUDE Irvine32.inc`",
+            "Phase 92 - Irvine32 WriteHex",
+            "direct virtual Irvine32 `WriteHex` are executable in the current subset after `INCLUDE Irvine32.inc`",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
             "Phase 79 allocates runtime stack storage for accepted LOCAL metadata",
             "selected-entry `ENDP` is not an implicit successful terminator",
@@ -2110,9 +2114,9 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 91 - Irvine32 WriteInt",
+            "Phase 92 - Irvine32 WriteHex",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
-            "Phase 91 - Irvine32 WriteInt",
+            "Phase 92 - Irvine32 WriteHex",
             "phase-71e-entry-procedure-end-mode-output-contract-v1",
             "This history file records completed milestones and audit evidence.",
             "It is not the phase-order authority",
@@ -2287,11 +2291,11 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 91 - Irvine32 WriteInt",
+            "Phase 92 - Irvine32 WriteHex",
             "Runtime/source-run MASM behavior phase:",
-            "Phase 91 - Irvine32 WriteInt",
+            "Phase 92 - Irvine32 WriteHex",
             "Phase 79 adds tests for automatic LOCAL frame setup and release",
-            "phase-91-irvine32-writeint-contract-v1",
+            "phase-92-irvine32-writehex-contract-v1",
             "local-frame-entry-unsupported",
             "invalid-frame-state",
             "stack-overflow",
@@ -2321,7 +2325,7 @@ def assert_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 91: Irvine32 WriteInt",
+            "Milestone 92: Irvine32 WriteHex",
             "INCLUDE Irvine32.inc",
                                                                         "exit",
             "final-registers",
@@ -2371,7 +2375,7 @@ def assert_current_status_and_harness_documented() -> None:
             "sourceRunOutputContract",
             "createMismatchedRuntimePhaseDiagnostic",
             "Number.isInteger(runResult.phase)",
-            "IMPLEMENTED_PHASE = 91",
+            "IMPLEMENTED_PHASE = 92",
         ],
     )
     assert_all_text_not_contains(

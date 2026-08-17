@@ -15,12 +15,12 @@
  * declaration metadata, and Phase 78A limited OPTION NOKEYWORD metadata, Phase 81 PROTO
  * declaration metadata, Phase 82 zero-argument INVOKE lowering, Phase 83
  * ADDR helper records, Phase 84 limited INVOKE DWORD argument lowering, and
- * Phase 87 virtual Irvine32 Crlf CALL/INVOKE lowering, Phase 88 direct WriteChar lowering, Phase 89 direct WriteString lowering, Phase 90 direct WriteDec lowering, and Phase 91 direct WriteInt lowering are supported; the Phase 79 executor uses parser-owned LOCAL metadata to create
+ * Phase 87 virtual Irvine32 Crlf CALL/INVOKE lowering, Phase 88 direct WriteChar lowering, Phase 89 direct WriteString lowering, Phase 90 direct WriteDec lowering, Phase 91 direct WriteInt lowering, and Phase 92 direct WriteHex lowering are supported; the Phase 79 executor uses parser-owned LOCAL metadata to create
  * automatic runtime frames, and Phase 80 lowers supported source-level LOCAL
  * operands to frame-relative runtime addresses. Accepted PROC remains
  * metadata-only for unsupported non-USES PROC tails. ENTER, scaled-index
  * addressing, general source-level ADDR outside accepted INVOKE arguments,
- * Irvine32 routine bodies beyond Crlf, direct WriteChar, direct WriteString, direct WriteDec, and direct WriteInt, and full MASM expression parsing remain later
+ * Irvine32 routine bodies beyond Crlf, direct WriteChar, direct WriteString, direct WriteDec, direct WriteInt, and direct WriteHex, and full MASM expression parsing remain later
  * milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
  * host files or linking external libraries. Recognizable textbook
@@ -348,6 +348,8 @@ static bool vm_parser_token_is_irvine32_writedec(const VmLexerToken *token);
 
 static bool vm_parser_token_is_irvine32_writeint(const VmLexerToken *token);
 
+static bool vm_parser_token_is_irvine32_writehex(const VmLexerToken *token);
+
 static const VmLexerToken *vm_parser_current_token(const VmParserState *state);
 
 static const VmLexerToken *vm_parser_peek_token(const VmParserState *state, size_t offset);
@@ -512,7 +514,7 @@ static const VmParserIrvine32RegistryEntry VM_PARSER_IRVINE32_REGISTRY[] = {
     {"WriteString", VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE},
     {"WriteDec", VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE},
     {"WriteInt", VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE},
-    {"WriteHex", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"WriteHex", VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE},
     {"WriteBin", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
     {"DumpRegs", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
     {"DumpMem", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
@@ -9047,6 +9049,18 @@ static bool vm_parser_parse_direct_call_instruction(VmParserState *state, const 
         return vm_parser_emit_instruction(state, VM_IR_OPCODE_IRVINE32_WRITEINT, vm_ir_operand_none(), vm_ir_operand_none(), mnemonic_token);
     }
 
+    if (vm_parser_token_is_irvine32_writehex(target_token)) {
+        if (!state->result->has_irvine32_virtual_include) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_MISSING_IRVINE32_INCLUDE, target_token, "CALL WriteHex requires INCLUDE Irvine32.inc before WriteHex can be used as a virtual Irvine32 routine.");
+            return false;
+        }
+        vm_parser_advance(state);
+        if (!vm_parser_expect_line_end(state)) {
+            return false;
+        }
+        return vm_parser_emit_instruction(state, VM_IR_OPCODE_IRVINE32_WRITEHEX, vm_ir_operand_none(), vm_ir_operand_none(), mnemonic_token);
+    }
+
     vm_parser_advance(state);
     if (!vm_parser_expect_line_end(state)) {
         return false;
@@ -9548,6 +9562,16 @@ static bool vm_parser_token_is_irvine32_writeint(const VmLexerToken *token) {
            vm_parser_token_equals(token, "WriteInt");
 }
 
+/// Returns whether a token names the virtual Irvine32 `WriteHex` routine.
+///
+/// @param token Token to inspect.
+/// @return true when @p token is an identifier spelling `WriteHex` case-insensitively.
+static bool vm_parser_token_is_irvine32_writehex(const VmLexerToken *token) {
+    return token != NULL &&
+           token->kind == VM_LEXER_TOKEN_IDENTIFIER &&
+           vm_parser_token_equals(token, "WriteHex");
+}
+
 /// Emits an unsupported-routine diagnostic for a virtual Irvine32 symbol when possible.
 ///
 /// The registry is active only after `INCLUDE Irvine32.inc`. Direct CALL
@@ -9596,6 +9620,10 @@ static bool vm_parser_diagnose_irvine32_symbol_use_if_known(VmParserState *state
         }
         if (vm_parser_token_is_irvine32_writeint(mnemonic_token)) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_CALL_FORM, mnemonic_token, "WriteInt is a virtual Irvine32 routine and must be called with CALL WriteInt.");
+            return true;
+        }
+        if (vm_parser_token_is_irvine32_writehex(mnemonic_token)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_CALL_FORM, mnemonic_token, "WriteHex is a virtual Irvine32 routine and must be called with CALL WriteHex.");
             return true;
         }
     }

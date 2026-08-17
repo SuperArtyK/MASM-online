@@ -18,16 +18,26 @@ Recent milestone detail in this file may be listed most-recent-first for handoff
 The canonical implementation order, phase numbering, phase tasks, required tests, and acceptance criteria remain in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Future assistants must not infer phase dependencies or next implementation work from the order of recent-history paragraphs in this file when the guide states a different order.
 
 Latest recorded completed milestone in this history file:
-Phase 91 - Irvine32 WriteInt
+Phase 92 - Irvine32 WriteHex
 
 Latest recorded runtime/source-run MASM behavior phase in this history file:
-Phase 91 - Irvine32 WriteInt
+Phase 92 - Irvine32 WriteHex
 
 This history file records completed milestones and audit evidence. It is not the phase-order authority and not a replacement for `docs/FULL_IMPLEMENTATION_SPEC.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, `docs/SUPPORTED_SYNTAX.md`, current repository code, or current tests. If this history file is not updated during a later milestone, its `latest recorded` lines may be older than the active repository state. Use the implementation guide and latest accepted milestone evidence to determine the next canonical implementation phase.
 
 Forward-looking phase navigation is guide-owned. At the time the Phase 88 history entry was updated, Phase 88 had been implemented as virtual Irvine32 `WriteChar` Program Console output while preserving Phase 87 virtual Irvine32 `Crlf` Program Console output while preserving Phase 86 Program Console output-limit and serialization infrastructure while preserving Phase 85 separate Program Console stream infrastructure, Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering, Phase 83 helper-level ADDR preparation, and Phase 82 zero-argument `INVOKE` behavior. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
 
 Corrective artifact-evidence note for Phase 71B: the latest Phase 71B repository archive's checked-in `web/dist/masm32_sim_core.wasm` contains `phase-71b-source-run-output-contract-v1`. This corrects the stale artifact-token warning preserved in `docs/history/reports/Milestone 71B report.md`, which stated that the checked-in Wasm still contained the earlier Phase 71A output-contract token. The historical report should remain period evidence unless the project owner explicitly requests historical report correction, but future audits should treat the archive's artifact-content scan as the stronger evidence for the checked-in Wasm token.
+
+## Phase 92 - Irvine32 WriteHex
+
+Phase 92 implements focused virtual Irvine32 fixed-width hexadecimal output. After `INCLUDE Irvine32.inc`, direct `call WriteHex` reads the current 32-bit bit pattern of `EAX` as an unsigned value and appends exactly eight uppercase hexadecimal digits to Program Console. Leading zeroes are retained to reach eight digits; output has no `0x` prefix, `h` suffix, separators, whitespace, carriage return, or line feed. Irvine32 routine-name matching remains case-insensitive even under `OPTION CASEMAP:NONE`.
+
+`WriteHex` preserves all modeled registers including `EAX`, modeled flags and flag-validity metadata, simulated memory, and memory-change rows. It performs no simulated-memory reads or writes. The complete eight-byte candidate is preflighted through the shared Program Console output-limit path; exactly eight remaining bytes succeed, while an over-limit call appends no partial digits, preserves earlier Program Console content, reports `console-output-limit-exceeded` against the complete direct-call instruction span, and does not emit `execution-complete`.
+
+Phase 92 advances runtime/source-run metadata to `Phase 92 - Irvine32 WriteHex` with output-contract token `phase-92-irvine32-writehex-contract-v1`, updates the browser default program to demonstrate `0000000A`, and advances active status guardrails. `INVOKE WriteHex`, `WriteBin`, `DumpRegs`, `DumpMem`, later Irvine32 routine families, and permanent WinAPI/PE/linker/host/native/full-x86 non-goals remain outside Phase 92 scope. Existing `WriteDec` unsigned-decimal and `WriteInt` signed-decimal behavior remains unchanged.
+
+This milestone-history entry is implementation history. If a future assistant finds a conflict between this entry and the active canonical `FULL_IMPLEMENTATION_SPEC.md` or `INCREMENTAL_IMPLEMENTATION_GUIDE.md`, the active spec and guide control.
 
 ## Phase 91 - Irvine32 WriteInt
 

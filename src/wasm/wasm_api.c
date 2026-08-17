@@ -28,7 +28,7 @@
  * Phase 82 zero-argument user-procedure INVOKE lowering and diagnostics,
  * Phase 83 ADDR helper preparation, Phase 84 limited INVOKE DWORD argument
  * lowering and cleanup validation, Phase 86 Program Console output-limit
- * serialization, Phase 87 Irvine32 Crlf, Phase 88 Irvine32 WriteChar, Phase 89 Irvine32 WriteString, Phase 90 Irvine32 WriteDec, and Phase 91 Irvine32 WriteInt, and recovered unsupported-feature
+ * serialization, Phase 87 Irvine32 Crlf, Phase 88 Irvine32 WriteChar, Phase 89 Irvine32 WriteString, Phase 90 Irvine32 WriteDec, Phase 91 Irvine32 WriteInt, and Phase 92 Irvine32 WriteHex, and recovered unsupported-feature
  * diagnostics, then reports a compact JSON result for the UI.
  */
 
@@ -95,16 +95,16 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase reported to JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 91U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 92U
 
-/// Suffix for the current Phase 91 runtime/source-run behavior phase.
+/// Suffix for the current Phase 92 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 91 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 91 - Irvine32 WriteInt"
+/// Full name of the current Phase 92 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 92 - Irvine32 WriteHex"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 91 Irvine32 WriteInt Program Console output.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-91-irvine32-writeint-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 92 Irvine32 WriteHex Program Console output.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-92-irvine32-writehex-contract-v1"
 
 /// Canonical empty Program Console JSON object for source-run fallback responses.
 #define MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON "\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0,\"maxBytes\":1048576,\"maxLines\":10000,\"limitExceeded\":false,\"limitKind\":null}"

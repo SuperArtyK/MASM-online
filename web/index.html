@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 91: Irvine32 WriteInt.
+  Milestone 92: Irvine32 WriteHex.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,13 +18,13 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 91: Irvine32 WriteInt</p>
+        <p class="muted">Milestone 92: Irvine32 WriteHex</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
 .code
 main PROC
-    mov eax, 80000000h
-    call WriteInt
+    mov eax, 0Ah
+    call WriteHex
     exit
 main ENDP
 END main</textarea>

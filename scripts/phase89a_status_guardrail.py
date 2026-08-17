@@ -6,7 +6,7 @@
 The validator originated in Phase 89A and remains the active documentation/status
 guardrail. It classifies files by role, evaluates bounded Markdown inventory
 units, runs the focused positive/negative fixture matrix, and verifies that the
-active runtime metadata matches the currently implemented Phase 91 WriteInt contract.
+active runtime metadata matches the currently implemented Phase 92 WriteHex contract.
 """
 
 from __future__ import annotations
@@ -21,10 +21,10 @@ from dataclasses import dataclass
 from typing import Iterable, Sequence
 
 
-EXPECTED_PHASE = 91
-EXPECTED_PHASE_NAME = "Phase 91 - Irvine32 WriteInt"
-EXPECTED_TOKEN = "phase-91-irvine32-writeint-contract-v1"
-EXPECTED_DEFAULT_EDITOR_SOURCE_SHA256 = "f10394373423419d61c594f201e3e78382854b0c15a76dbe0ff67dbc9403e375"
+EXPECTED_PHASE = 92
+EXPECTED_PHASE_NAME = "Phase 92 - Irvine32 WriteHex"
+EXPECTED_TOKEN = "phase-92-irvine32-writehex-contract-v1"
+EXPECTED_DEFAULT_EDITOR_SOURCE_SHA256 = "8b73b418c4761568c929c2621b1399d400ce69842ed48fe7f68fcf290171394a"
 FIXTURE_MANIFEST = pathlib.Path("tests/static/phase89a/manifest.json")
 
 DEFERRED_PATTERNS = (
@@ -75,13 +75,13 @@ INVENTORY_PATTERNS = (
     r"\b(?:after|with) include irvine32\.inc\b",
 )
 FUTURE_SIMULATOR_PATTERNS = (
-    r"\bwrite(?:hex|bin)\b",
+    r"\bwritebin\b",
     r"\bnumeric output\b",
     r"\binput routines?\b",
     r"\bdebug routines?\b",
     r"\brandom routines?\b",
     r"\bfile routines?\b",
-    r"\binvoke\s+(?:writestring|writechar|writedec|writeint)\b",
+    r"\binvoke\s+(?:writestring|writechar|writedec|writeint|writehex)\b",
     r"\birvine32[^.;:]*\binvoke\b",
     r"\birvine32 routine dispatch beyond\b",
 )
@@ -399,8 +399,8 @@ def _status_segments(text: str) -> list[str]:
         if segment.strip()
     ]
     segments: list[str] = []
-    exact_form = re.compile(r"\b(?:direct\s+)?(?:call\s+|invoke\s+)?(?:crlf|writechar|writestring|writedec)\b")
-    exact_form_at_start = re.compile(r"^(?:direct\s+)?(?:call\s+|invoke\s+)?(?:crlf|writechar|writestring|writedec)\b")
+    exact_form = re.compile(r"\b(?:direct\s+)?(?:call\s+|invoke\s+)?(?:crlf|writechar|writestring|writedec|writeint|writehex)\b")
+    exact_form_at_start = re.compile(r"^(?:direct\s+)?(?:call\s+|invoke\s+)?(?:crlf|writechar|writestring|writedec|writeint|writehex)\b")
     for candidate in initial:
         if re.search(r"\bbeyond (?:the )?implemented\b", candidate):
             segments.append(candidate)
@@ -503,6 +503,11 @@ def _implemented_output_forms(text: str) -> set[str]:
                 forms.add("direct-writeint")
             elif not re.search(r"\binvoke\s+writeint\b", segment):
                 forms.add("direct-writeint")
+        if re.search(r"\bwritehex\b", segment):
+            if re.search(r"\b(?:call\s+writehex|direct\s+(?:call\s+)?writehex)\b", segment):
+                forms.add("direct-writehex")
+            elif not re.search(r"\binvoke\s+writehex\b", segment):
+                forms.add("direct-writehex")
     return forms
 
 def _looks_like_meta_test_instruction(text: str) -> bool:
@@ -573,6 +578,38 @@ def validate_active_markdown(text: str, path: str, *, line_offset: int = 0) -> l
                     "Current Irvine32 output inventory names Crlf, WriteChar, WriteString, and WriteDec but omits implemented direct WriteInt.",
                 )
             )
+        phase92_inventory = {"crlf", "direct-writechar", "direct-writestring", "direct-writedec", "direct-writeint"}.issubset(implemented_forms) and has_inventory_context
+        if phase92_inventory and "direct-writehex" not in implemented_forms:
+            issues.append(
+                ValidationIssue(
+                    "missing-direct-writehex",
+                    path,
+                    unit.line_start,
+                    unit.line_end,
+                    "Current Irvine32 output inventory names Crlf, WriteChar, WriteString, WriteDec, and WriteInt but omits implemented direct WriteHex.",
+                )
+            )
+
+        # A semicolon-delimited list can inherit one leading deferred-status phrase
+        # across later list clauses. Check the complete unit so a boundary such as
+        # "Deferred simulator features include ...; Irvine32 routines beyond ..."
+        # cannot evade the per-clause deferred checks merely because the status word
+        # appears before an earlier semicolon.
+        if (
+            _is_deferred_assertion(normalized)
+            and re.search(r"\birvine32 routines? beyond\b", normalized)
+            and re.search(r"\b(?:writechar|writestring|writedec|writeint|writehex)\b", normalized)
+            and not re.search(r"\bwritehex\b", normalized)
+        ):
+            issues.append(
+                ValidationIssue(
+                    "missing-direct-writehex",
+                    path,
+                    unit.line_start,
+                    unit.line_end,
+                    "Current Irvine32 deferred-boundary inventory omits implemented direct WriteHex from its named boundary.",
+                )
+            )
 
         for clause in clauses:
             is_deferred = _is_deferred_assertion(clause)
@@ -587,6 +624,7 @@ def validate_active_markdown(text: str, path: str, *, line_offset: int = 0) -> l
                     "implemented direct call writestring",
                     "implemented direct call writedec",
                     "implemented direct call writeint",
+                    "implemented direct call writehex",
                     "implemented direct call writechar",
                     "implemented call crlf",
                     "implemented invoke crlf",
@@ -595,7 +633,7 @@ def validate_active_markdown(text: str, path: str, *, line_offset: int = 0) -> l
             )
 
             if is_deferred and re.search(r"\birvine32 routines? beyond\b", clause):
-                named_boundary = re.search(r"\b(?:writechar|writestring|writedec|writeint)\b", clause) is not None
+                named_boundary = re.search(r"\b(?:writechar|writestring|writedec|writeint|writehex)\b", clause) is not None
                 if named_boundary and not re.search(r"\bwritedec\b", clause):
                     issues.append(
                         ValidationIssue(
@@ -616,12 +654,22 @@ def validate_active_markdown(text: str, path: str, *, line_offset: int = 0) -> l
                             "Current Irvine32 deferred-boundary inventory omits implemented direct WriteInt from its named boundary.",
                         )
                     )
+                if named_boundary and not re.search(r"\bwritehex\b", clause):
+                    issues.append(
+                        ValidationIssue(
+                            "missing-direct-writehex",
+                            path,
+                            unit.line_start,
+                            unit.line_end,
+                            "Current Irvine32 deferred-boundary inventory omits implemented direct WriteHex from its named boundary.",
+                        )
+                    )
 
             if (
                 is_deferred
                 and re.search(r"\bother irvine32 output routines?\b", clause)
-                and not re.search(r"\b(?:writehex|writebin)\b", clause)
-                and not re.search(r"\bbeyond\b[^.;:]*\bwriteint\b", clause)
+                and not re.search(r"\bwritebin\b", clause)
+                and not re.search(r"\bbeyond\b[^.;:]*\bwritehex\b", clause)
             ):
                 issues.append(
                     ValidationIssue(
@@ -629,7 +677,7 @@ def validate_active_markdown(text: str, path: str, *, line_offset: int = 0) -> l
                         path,
                         unit.line_start,
                         unit.line_end,
-                        "Deferred Irvine32 output inventory uses ambiguous 'other routines' wording without excluding the implemented WriteInt boundary or naming still-deferred siblings.",
+                        "Deferred Irvine32 output inventory uses ambiguous 'other routines' wording without excluding the implemented WriteHex boundary or naming still-deferred siblings.",
                     )
                 )
 
@@ -641,6 +689,7 @@ def validate_active_markdown(text: str, path: str, *, line_offset: int = 0) -> l
                     (r"\bcall\s+writestring\b|\bdirect\s+writestring\b", "direct-writestring-deferred", "Implemented direct CALL WriteString"),
                     (r"\bcall\s+writedec\b|\bdirect\s+writedec\b", "direct-writedec-deferred", "Implemented direct CALL WriteDec"),
                     (r"\bcall\s+writeint\b|\bdirect\s+writeint\b", "direct-writeint-deferred", "Implemented direct CALL WriteInt"),
+                    (r"\bcall\s+writehex\b|\bdirect\s+writehex\b", "direct-writehex-deferred", "Implemented direct CALL WriteHex"),
                 )
                 for pattern, code, description in deferred_implemented_forms:
                     if re.search(pattern, clause):
@@ -702,6 +751,16 @@ def validate_active_markdown(text: str, path: str, *, line_offset: int = 0) -> l
                         unit.line_start,
                         unit.line_end,
                         "INVOKE WriteInt is presented as implemented even though only direct CALL WriteInt is implemented.",
+                    )
+                )
+            if is_implemented and re.search(r"\binvoke\s+writehex\b", clause):
+                issues.append(
+                    ValidationIssue(
+                        "invoke-writehex-implemented",
+                        path,
+                        unit.line_start,
+                        unit.line_end,
+                        "INVOKE WriteHex is presented as implemented even though only direct CALL WriteHex is implemented.",
                     )
                 )
 
@@ -829,7 +888,7 @@ def validate_fixture(root: pathlib.Path, entry: dict[str, object]) -> FixtureRes
         else:
             issues = validate_metadata_payload(payload, str(fixture_path.relative_to(root)))
             if role == "future-token" and isinstance(payload, dict):
-                forbidden_keys = {f"phase{number}Token" for number in range(92, 96)}
+                forbidden_keys = {f"phase{number}Token" for number in range(93, 96)}
                 present = sorted(forbidden_keys.intersection(payload))
                 if present:
                     issues.append(
@@ -838,7 +897,7 @@ def validate_fixture(root: pathlib.Path, entry: dict[str, object]) -> FixtureRes
                             str(fixture_path.relative_to(root)),
                             1,
                             1,
-                            "Future Phase 92-95 runtime tokens must be absent before their owning phases: " + ", ".join(present),
+                            "Future Phase 93-95 runtime tokens must be absent before their owning phases: " + ", ".join(present),
                         )
                     )
     else:
@@ -1177,7 +1236,7 @@ def validate_default_editor_source(root: pathlib.Path) -> list[ValidationIssue]:
         raise GuardrailInputError("Phase 89A manifest must define defaultEditorSourceSha256 as lowercase SHA-256")
     if expected != EXPECTED_DEFAULT_EDITOR_SOURCE_SHA256:
         raise GuardrailInputError(
-            "status manifest defaultEditorSourceSha256 disagrees with the accepted Phase 91 default-source hash"
+            "status manifest defaultEditorSourceSha256 disagrees with the accepted Phase 92 default-source hash"
         )
 
     relative_path = "web/index.html"
@@ -1204,7 +1263,7 @@ def validate_default_editor_source(root: pathlib.Path) -> list[ValidationIssue]:
             relative_path,
             line,
             line + source.count("\n"),
-            f"Active status must use the Phase 91 default editor source SHA-256 {expected}; found {actual}.",
+            f"Active status must use the Phase 92 default editor source SHA-256 {expected}; found {actual}.",
         )
     ]
 
@@ -1214,29 +1273,29 @@ def validate_required_status_shapes(root: pathlib.Path) -> list[ValidationIssue]
     issues: list[ValidationIssue] = []
     required_fragments = {
         "README.md": (
-            "| Current milestone | Phase 91 - Irvine32 WriteInt |",
-            "| Runtime/source-run MASM behavior phase | Phase 91 - Irvine32 WriteInt |",
-            "Phase 91 adds direct virtual Irvine32 `WriteInt` signed-decimal output while preserving the previously implemented Irvine32 output forms and keeping future routine forms deferred.",
+            "| Current milestone | Phase 92 - Irvine32 WriteHex |",
+            "| Runtime/source-run MASM behavior phase | Phase 92 - Irvine32 WriteHex |",
+            "Phase 92 adds direct virtual Irvine32 `WriteHex` fixed-width uppercase hexadecimal output while preserving the previously implemented Irvine32 output forms and keeping future routine forms deferred.",
         ),
         "docs/BUILDING_AND_DEVELOPMENT.md": (
-            "Current milestone:\n\n- Phase 91 - Irvine32 WriteInt",
-            "Runtime/source-run MASM behavior phase:\n\n- Phase 91 - Irvine32 WriteInt",
+            "Current milestone:\n\n- Phase 92 - Irvine32 WriteHex",
+            "Runtime/source-run MASM behavior phase:\n\n- Phase 92 - Irvine32 WriteHex",
         ),
         "docs/SUPPORTED_SYNTAX.md": (
-            "Current milestone:\n\n- Phase 91 - Irvine32 WriteInt",
-            "Runtime/source-run MASM behavior phase:\n\n- Phase 91 - Irvine32 WriteInt",
+            "Current milestone:\n\n- Phase 92 - Irvine32 WriteHex",
+            "Runtime/source-run MASM behavior phase:\n\n- Phase 92 - Irvine32 WriteHex",
         ),
         "docs/TESTING_GUIDE.md": (
-            "Current milestone:\n\n- Phase 91 - Irvine32 WriteInt",
-            "Runtime/source-run MASM behavior phase:\n\n- Phase 91 - Irvine32 WriteInt",
+            "Current milestone:\n\n- Phase 92 - Irvine32 WriteHex",
+            "Runtime/source-run MASM behavior phase:\n\n- Phase 92 - Irvine32 WriteHex",
         ),
         "docs/MILESTONE_HISTORY.md": (
-            "Latest recorded completed milestone in this history file:\nPhase 91 - Irvine32 WriteInt",
-            "Latest recorded runtime/source-run MASM behavior phase in this history file:\nPhase 91 - Irvine32 WriteInt",
-            "## Phase 91 - Irvine32 WriteInt",
+            "Latest recorded completed milestone in this history file:\nPhase 92 - Irvine32 WriteHex",
+            "Latest recorded runtime/source-run MASM behavior phase in this history file:\nPhase 92 - Irvine32 WriteHex",
+            "## Phase 92 - Irvine32 WriteHex",
         ),
         "web/index.html": (
-            "Milestone 91: Irvine32 WriteInt",
+            "Milestone 92: Irvine32 WriteHex",
         ),
     }
     for relative_path, fragments in required_fragments.items():
@@ -1271,7 +1330,7 @@ def validate_required_status_shapes(root: pathlib.Path) -> list[ValidationIssue]
     if diagnostic_start < 0 or diagnostic_end < 0:
         raise GuardrailInputError("FULL_IMPLEMENTATION_SPEC diagnostic-classification subsection markers are missing")
     diagnostic_section = spec_text[diagnostic_start:diagnostic_end]
-    if "Phase 91" in diagnostic_section:
+    if "Phase 92" in diagnostic_section:
         line = spec_text.count("\n", 0, diagnostic_start) + 1
         issues.append(
             ValidationIssue(
@@ -1279,7 +1338,7 @@ def validate_required_status_shapes(root: pathlib.Path) -> list[ValidationIssue]
                 "docs/FULL_IMPLEMENTATION_SPEC.md",
                 line,
                 line,
-                "Stable diagnostic classification text must not embed a Phase 91 current-status label.",
+                "Stable diagnostic classification text must not embed a Phase 92 current-status label.",
             )
         )
     return issues

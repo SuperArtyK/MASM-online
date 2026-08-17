@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for parser behavior through Phase 91 Irvine32 WriteInt coverage.
+ * @brief Unit and integration tests for parser behavior through Phase 92 Irvine32 WriteHex coverage.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
@@ -8,7 +8,7 @@
  * Phase 67A procedure-range metadata, Phase 68 call-target classification
  * metadata, Phase 68B EIP source-operand restrictions, Phase 69 direct CALL,
  * Phase 70 plain near RET, Phase 72A source-level PUSH/POP, Phase 73
- * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, Phase 78 LOCAL parser metadata, Phase 78A limited OPTION NOKEYWORD support, Phase 81 PROTO metadata, Phase 82 zero-argument INVOKE parsing and targeted INVOKE diagnostics, Phase 83 helper-level ADDR record preparation, Phase 84 INVOKE DWORD argument parsing, Phase 87 virtual Irvine32 Crlf parser paths, Phase 88 virtual Irvine32 WriteChar parser paths, Phase 89 virtual Irvine32 WriteString parser paths, Phase 90 virtual Irvine32 WriteDec parser paths, Phase 91 virtual Irvine32 WriteInt parser paths, unsupported syntax, INCLUDELIB non-goal diagnostics,
+ * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, Phase 78 LOCAL parser metadata, Phase 78A limited OPTION NOKEYWORD support, Phase 81 PROTO metadata, Phase 82 zero-argument INVOKE parsing and targeted INVOKE diagnostics, Phase 83 helper-level ADDR record preparation, Phase 84 INVOKE DWORD argument parsing, Phase 87 virtual Irvine32 Crlf parser paths, Phase 88 virtual Irvine32 WriteChar parser paths, Phase 89 virtual Irvine32 WriteString parser paths, Phase 90 virtual Irvine32 WriteDec parser paths, Phase 91 virtual Irvine32 WriteInt parser paths, Phase 92 virtual Irvine32 WriteHex parser paths, unsupported syntax, INCLUDELIB non-goal diagnostics,
  * and integration with the current executor
  * without adding future execution behavior.
  */
@@ -1435,7 +1435,7 @@ static int test_phase69_direct_call_target_rejections(void) {
         "INCLUDE Irvine32.inc\n"
         ".code\n"
         "main PROC\n"
-        "    call WriteHex\n"
+        "    call WriteBin\n"
         "main ENDP\n"
         "END main\n",
         &buffers,
@@ -4852,13 +4852,13 @@ static int test_phase41_irvine32_routine_diagnostics(void) {
         "INCLUDE Irvine32.inc\n"
         ".code\n"
         "main PROC\n"
-        "    WriteHex\n"
+        "    WriteBin\n"
         "main ENDP\n"
         "END main\n";
     const char *without_include =
         ".code\n"
         "main PROC\n"
-        "    WriteHex\n"
+        "    WriteBin\n"
         "main ENDP\n"
         "END main\n";
     const char *windows_name =
@@ -4953,11 +4953,11 @@ static int test_phase87_irvine32_crlf_parser_paths(void) {
         "    Crlf\n"
         "main ENDP\n"
         "END main\n";
-    const char *deferred_write_hex =
+    const char *deferred_write_bin =
         "INCLUDE Irvine32.inc\n"
         ".code\n"
         "main PROC\n"
-        "    call WriteHex\n"
+        "    call WriteBin\n"
         "main ENDP\n"
         "END main\n";
 
@@ -4988,9 +4988,9 @@ static int test_phase87_irvine32_crlf_parser_paths(void) {
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_CALL_FORM, "Bare Crlf should use the invalid Irvine32 call-form diagnostic");
     failures += expect_string(buffers.diagnostics[0].message, "Crlf is a virtual Irvine32 routine and must be called with CALL Crlf or zero-argument INVOKE Crlf.", "Bare Crlf diagnostic should state the supported source forms");
 
-    failures += expect_parser_status(parse_for_test(deferred_write_hex, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "WriteHex CALL should remain deferred");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "WriteHex CALL should keep Irvine32 deferred diagnostic");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "deferred", "WriteHex diagnostic should still say deferred");
+    failures += expect_parser_status(parse_for_test(deferred_write_bin, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "WriteBin CALL should remain deferred");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "WriteBin CALL should keep Irvine32 deferred diagnostic");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "deferred", "WriteBin diagnostic should still say deferred");
 
     return failures;
 }
@@ -5143,17 +5143,17 @@ static int test_phase90_irvine32_writedec_parser_paths(void) {
         "    INVOKE WriteDec\n"
         "main ENDP\n"
         "END main\n";
-    const char *deferred_writehex =
+    const char *deferred_writebin =
         "INCLUDE Irvine32.inc\n"
         ".code\n"
         "main PROC\n"
-        "    call WriteHex\n"
+        "    call WriteBin\n"
         "main ENDP\n"
         "END main\n";
 
     failures += expect_u32(vm_parser_classify_irvine32_symbol("WriteDec", 8U), VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE, "WriteDec should be a supported Irvine32 routine in Phase 90");
     failures += expect_u32(vm_parser_classify_irvine32_symbol("wRiTeDeC", 8U), VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE, "WriteDec lookup should remain case-insensitive under CASEMAP:NONE");
-    failures += expect_u32(vm_parser_classify_irvine32_symbol("WriteHex", 8U), VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "WriteHex should remain planned after Phase 90");
+    failures += expect_u32(vm_parser_classify_irvine32_symbol("WriteBin", 8U), VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "WriteBin should remain planned after Phase 90");
 
     failures += expect_parser_status(parse_for_test(accepted_source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 90 WriteDec CALL forms should parse");
     failures += expect_size(result.diagnostic_count, 0U, "accepted WriteDec forms should not emit diagnostics");
@@ -5182,8 +5182,8 @@ static int test_phase90_irvine32_writedec_parser_paths(void) {
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE_INVOKE, "INVOKE WriteDec should keep unsupported-irvine-invoke");
     failures += expect_string_contains(buffers.diagnostics[0].message, "deferred", "INVOKE WriteDec should remain explicitly deferred");
 
-    failures += expect_parser_status(parse_for_test(deferred_writehex, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "WriteHex CALL should remain deferred");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "WriteHex CALL should retain the deferred Irvine32 diagnostic");
+    failures += expect_parser_status(parse_for_test(deferred_writebin, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "WriteBin CALL should remain deferred");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "WriteBin CALL should retain the deferred Irvine32 diagnostic");
 
     return failures;
 }
@@ -5225,17 +5225,17 @@ static int test_phase91_irvine32_writeint_parser_paths(void) {
         "    INVOKE WriteInt\n"
         "main ENDP\n"
         "END main\n";
-    const char *deferred_writehex =
+    const char *deferred_writebin =
         "INCLUDE Irvine32.inc\n"
         ".code\n"
         "main PROC\n"
-        "    call WriteHex\n"
+        "    call WriteBin\n"
         "main ENDP\n"
         "END main\n";
 
     failures += expect_u32(vm_parser_classify_irvine32_symbol("WriteInt", 8U), VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE, "WriteInt should be a supported Irvine32 routine in Phase 91");
     failures += expect_u32(vm_parser_classify_irvine32_symbol("wRiTeInT", 8U), VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE, "WriteInt lookup should remain case-insensitive under CASEMAP:NONE");
-    failures += expect_u32(vm_parser_classify_irvine32_symbol("WriteHex", 8U), VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "WriteHex should remain planned after Phase 91");
+    failures += expect_u32(vm_parser_classify_irvine32_symbol("WriteBin", 8U), VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "WriteBin should remain planned after Phase 91");
 
     failures += expect_parser_status(parse_for_test(accepted_source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 91 WriteInt CALL forms should parse");
     failures += expect_size(result.diagnostic_count, 0U, "accepted WriteInt forms should not emit diagnostics");
@@ -5269,8 +5269,95 @@ static int test_phase91_irvine32_writeint_parser_paths(void) {
     failures += expect_size(buffers.diagnostics[0].location.offset, 48U, "INVOKE WriteInt diagnostic should preserve target byte offset");
     failures += expect_size(buffers.diagnostics[0].lexeme_length, 8U, "INVOKE WriteInt diagnostic should span WriteInt");
 
-    failures += expect_parser_status(parse_for_test(deferred_writehex, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "WriteHex CALL should remain deferred after Phase 91");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "WriteHex CALL should retain the deferred Irvine32 diagnostic");
+    failures += expect_parser_status(parse_for_test(deferred_writebin, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "WriteBin CALL should remain deferred after Phase 91");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "WriteBin CALL should retain the deferred Irvine32 diagnostic");
+
+    return failures;
+}
+
+/// Verifies Phase 92 accepts direct virtual Irvine32 WriteHex through CALL only.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase92_irvine32_writehex_parser_paths(void) {
+    int failures = 0;
+    VmParserResult result;
+    ParserTestBuffers buffers;
+    const char *accepted_source =
+        "INCLUDE Irvine32.inc\n"
+        "OPTION CASEMAP:NONE\n"
+        ".code\n"
+        "main PROC\n"
+        "    call WriteHex\n"
+        "    CALL wRiTeHeX\n"
+        "    exit\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *without_include =
+        ".code\n"
+        "main PROC\n"
+        "    call WriteHex\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *bare_writehex =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    WriteHex\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *invoke_writehex =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    INVOKE WriteHex\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *deferred_writebin =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    call WriteBin\n"
+        "main ENDP\n"
+        "END main\n";
+
+    failures += expect_u32(vm_parser_classify_irvine32_symbol("WriteHex", 8U), VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE, "WriteHex should be a supported Irvine32 routine in Phase 92");
+    failures += expect_u32(vm_parser_classify_irvine32_symbol("wRiTeHeX", 8U), VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_ROUTINE, "WriteHex lookup should remain case-insensitive under CASEMAP:NONE");
+    failures += expect_u32(vm_parser_classify_irvine32_symbol("WriteBin", 8U), VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "WriteBin should remain planned after Phase 92");
+
+    failures += expect_parser_status(parse_for_test(accepted_source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 92 WriteHex CALL forms should parse");
+    failures += expect_size(result.diagnostic_count, 0U, "accepted WriteHex forms should not emit diagnostics");
+    failures += expect_size(result.instruction_count, 3U, "accepted WriteHex source should emit two WriteHex instructions plus exit");
+    if (result.instruction_count >= 3U) {
+        failures += expect_u32((uint32_t)buffers.instructions[0].opcode, (uint32_t)VM_IR_OPCODE_IRVINE32_WRITEHEX, "call WriteHex should lower to the WriteHex IR opcode");
+        failures += expect_u32((uint32_t)buffers.instructions[1].opcode, (uint32_t)VM_IR_OPCODE_IRVINE32_WRITEHEX, "mixed-case CALL WriteHex should lower under CASEMAP:NONE");
+        failures += expect_u32((uint32_t)buffers.instructions[2].opcode, (uint32_t)VM_IR_OPCODE_EXIT, "exit should remain the final instruction after WriteHex calls");
+    }
+
+    failures += expect_parser_status(parse_for_test(without_include, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL WriteHex without Irvine32 include should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_MISSING_IRVINE32_INCLUDE, "CALL WriteHex without include should use missing-irvine32-include");
+    failures += expect_string(buffers.diagnostics[0].message, "CALL WriteHex requires INCLUDE Irvine32.inc before WriteHex can be used as a virtual Irvine32 routine.", "CALL WriteHex without include should use the exact required message");
+    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "CALL WriteHex missing-include diagnostic should preserve target line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 10U, "CALL WriteHex missing-include diagnostic should point at the target token");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 25U, "CALL WriteHex missing-include diagnostic should preserve target byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 8U, "CALL WriteHex missing-include diagnostic should span WriteHex");
+
+    failures += expect_parser_status(parse_for_test(bare_writehex, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Bare WriteHex should diagnose after Phase 92");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_IRVINE32_CALL_FORM, "Bare WriteHex should use invalid-irvine32-call-form");
+    failures += expect_string(buffers.diagnostics[0].message, "WriteHex is a virtual Irvine32 routine and must be called with CALL WriteHex.", "Bare WriteHex should use the exact supported-form message");
+    failures += expect_size(buffers.diagnostics[0].location.line, 4U, "Bare WriteHex diagnostic should preserve routine line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 5U, "Bare WriteHex diagnostic should point at routine token");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 41U, "Bare WriteHex diagnostic should preserve routine byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 8U, "Bare WriteHex diagnostic should span WriteHex");
+
+    failures += expect_parser_status(parse_for_test(invoke_writehex, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "INVOKE WriteHex should remain deferred after Phase 92");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE_INVOKE, "INVOKE WriteHex should keep unsupported-irvine-invoke");
+    failures += expect_size(buffers.diagnostics[0].location.line, 4U, "INVOKE WriteHex diagnostic should preserve target line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 12U, "INVOKE WriteHex diagnostic should point at target token");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 48U, "INVOKE WriteHex diagnostic should preserve target byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 8U, "INVOKE WriteHex diagnostic should span WriteHex");
+
+    failures += expect_parser_status(parse_for_test(deferred_writebin, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "WriteBin CALL should remain deferred after Phase 92");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "WriteBin CALL should retain the deferred Irvine32 diagnostic");
 
     return failures;
 }
@@ -9111,6 +9198,7 @@ int main(void) {
     failures += test_phase88_irvine32_writechar_parser_paths();
     failures += test_phase90_irvine32_writedec_parser_paths();
     failures += test_phase91_irvine32_writeint_parser_paths();
+    failures += test_phase92_irvine32_writehex_parser_paths();
     failures += test_phase43_inc_dec_parse_to_ir();
     failures += test_phase43_inc_dec_parse_error_paths();
     failures += test_phase44_logical_binary_parse_to_ir();
@@ -9155,6 +9243,6 @@ int main(void) {
         return 1;
     }
 
-    printf("Parser tests through Phase 91 Irvine32 WriteInt coverage passed.\n");
+    printf("Parser tests through Phase 92 Irvine32 WriteHex coverage passed.\n");
     return 0;
 }

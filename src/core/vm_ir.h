@@ -160,6 +160,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_IRVINE32_WRITEDEC,
     /// Append the signed decimal representation of EAX for virtual Irvine32 `WriteInt`.
     VM_IR_OPCODE_IRVINE32_WRITEINT,
+    /// Append the fixed-width uppercase hexadecimal representation of EAX for virtual Irvine32 `WriteHex`.
+    VM_IR_OPCODE_IRVINE32_WRITEHEX,
     /// Number of currently supported operation codes.
     VM_IR_OPCODE_COUNT
 } VmIrOpcode;

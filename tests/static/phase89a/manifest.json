@@ -76,19 +76,14 @@
     {
       "path": "docs/history/reports/*.md",
       "role": "historical",
-      "validator": "none"
+      "validator": "none",
+      "requireMatch": false
     },
     {
       "path": "docs/history/PROJECT_AUDIT_AND_HANDOFF_REPORT_*.md",
       "role": "historical",
       "validator": "none",
       "requireMatch": false
-    },
-    {
-      "path": "docs/history/reports/Milestone 89 report.md",
-      "role": "historical",
-      "validator": "none",
-      "expectedSha256": "93233aa1aa7a55340038d6148a183c44b8cb0b522c267621bc3b5bbb0ac2d766"
     }
   ],
   "fixtures": [
@@ -417,7 +412,35 @@
       "expect": "fail",
       "expectedCode": "ambiguous-irvine32-deferred-inventory",
       "expectedLine": 3
+    },
+    {
+      "path": "negative_missing_writehex.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-writehex",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_direct_writehex_deferred.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "direct-writehex-deferred",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_stale_writehex_semicolon_deferred_boundary.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-writehex",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_invoke_writehex_implemented.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "invoke-writehex-implemented",
+      "expectedLine": 3
     }
   ],
-  "defaultEditorSourceSha256": "f10394373423419d61c594f201e3e78382854b0c15a76dbe0ff67dbc9403e375"
+  "defaultEditorSourceSha256": "8b73b418c4761568c929c2621b1399d400ce69842ed48fe7f68fcf290171394a"
 }

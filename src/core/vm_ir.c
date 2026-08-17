@@ -260,6 +260,8 @@ const char *vm_ir_opcode_name(VmIrOpcode opcode) {
             return "writedec";
         case VM_IR_OPCODE_IRVINE32_WRITEINT:
             return "writeint";
+        case VM_IR_OPCODE_IRVINE32_WRITEHEX:
+            return "writehex";
         default:
             return NULL;
     }
