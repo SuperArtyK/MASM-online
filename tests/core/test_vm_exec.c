@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 92 Irvine32 WriteHex coverage.
+ * @brief Unit tests for the VM executor through Phase 93 Irvine32 WriteBin coverage.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
@@ -8,7 +8,7 @@
  * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end-mode compatibility, Phase 71F explicit-exit fallthrough regression coverage, Phase 72
  * call-depth resource-limit coverage, Phase 72A source-level PUSH/POP,
  * Phase 73 LEAVE frame teardown, Phase 74 RET imm16 cleanup, and
- * Phase 77 PROC USES runtime save/restore, Phase 79 automatic LOCAL stack allocation/lifetime, Phase 80 LOCAL operand active-frame checks, Phase 87 virtual Irvine32 Crlf output, Phase 88 virtual Irvine32 WriteChar output, Phase 89 virtual Irvine32 WriteString output, Phase 90 virtual Irvine32 WriteDec output, Phase 91 virtual Irvine32 WriteInt output, and Phase 92 virtual Irvine32 WriteHex output. They intentionally avoid parser and browser UI behavior except for the Phase 42 virtual exit terminator and focused Irvine32 routine contracts.
+ * Phase 77 PROC USES runtime save/restore, Phase 79 automatic LOCAL stack allocation/lifetime, Phase 80 LOCAL operand active-frame checks, Phase 87 virtual Irvine32 Crlf output, Phase 88 virtual Irvine32 WriteChar output, Phase 89 virtual Irvine32 WriteString output, Phase 90 virtual Irvine32 WriteDec output, Phase 91 virtual Irvine32 WriteInt output, Phase 92 virtual Irvine32 WriteHex output, and Phase 93 virtual Irvine32 WriteBin output. They intentionally avoid parser and browser UI behavior except for the Phase 42 virtual exit terminator and focused Irvine32 routine contracts.
  */
 
 #include <stdbool.h>
@@ -1343,6 +1343,165 @@ static int test_phase92_irvine32_writehex_output_limits_are_atomic(void) {
     } else {
         failures += expect_u32(diagnostic->instruction.source_line, 25U, "WriteHex output-limit diagnostic should preserve the call line");
         failures += expect_string(diagnostic->instruction.source_text, "call WriteHex", "WriteHex output-limit diagnostic should preserve the full call instruction text");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 93 WriteBin formats fixed-width binary EAX and preserves VM state.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase93_irvine32_writebin_formats_and_preserves_state(void) {
+    int failures = 0;
+    static const struct {
+        uint32_t value;
+        const char *expected;
+    } cases[] = {
+        {0x00000000U, "00000000000000000000000000000000"},
+        {0xFFFFFFFFU, "11111111111111111111111111111111"},
+        {0x00000001U, "00000000000000000000000000000001"},
+        {0x80000000U, "10000000000000000000000000000000"},
+        {0xAAAAAAAAU, "10101010101010101010101010101010"},
+        {0x55555555U, "01010101010101010101010101010101"},
+        {0x7FFFFFFFU, "01111111111111111111111111111111"},
+        {0x00000002U, "00000000000000000000000000000010"},
+        {0x40000000U, "01000000000000000000000000000000"}
+    };
+    size_t case_index = 0U;
+
+    for (case_index = 0U; case_index < sizeof(cases) / sizeof(cases[0]); case_index += 1U) {
+        Vm vm;
+        uint32_t value = 0U;
+        const VmExecDelta *delta = NULL;
+        const VmIrInstruction program[] = {
+            {VM_IR_OPCODE_IRVINE32_WRITEBIN, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 26U, "call WriteBin", 0U}
+        };
+
+        failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteBin formatting test");
+        failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteBin formatting program should load");
+        failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, cases[case_index].value) ? 0 : record_failure("seed EAX should succeed before WriteBin");
+        failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0x11111111U) ? 0 : record_failure("seed EBX should succeed before WriteBin");
+        failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ECX, 0x22222222U) ? 0 : record_failure("seed ECX should succeed before WriteBin");
+        failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0x33333333U) ? 0 : record_failure("seed EDX should succeed before WriteBin");
+        failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESI, 0x44444444U) ? 0 : record_failure("seed ESI should succeed before WriteBin");
+        failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDI, 0x55555555U) ? 0 : record_failure("seed EDI should succeed before WriteBin");
+        failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBP, 0x66666666U) ? 0 : record_failure("seed EBP should succeed before WriteBin");
+        failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, 0x77777777U) ? 0 : record_failure("seed ESP should succeed before WriteBin");
+        failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_CF) ? 0 : record_failure("seed CF should succeed before WriteBin");
+        failures += vm_cpu_clear_flag(&vm.cpu, VM_FLAG_ZF) ? 0 : record_failure("seed ZF should succeed before WriteBin");
+        failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_SF) ? 0 : record_failure("seed SF should succeed before WriteBin");
+        failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_OF) ? 0 : record_failure("seed OF bit should succeed before WriteBin");
+        failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 25U, 1U, 250U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity before WriteBin should succeed");
+
+        failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "WriteBin should execute successfully");
+        failures += expect_string(vm_console_text(vm_program_console(&vm)), cases[case_index].expected, "WriteBin should emit exactly 32 binary digits");
+        failures += expect_size(vm_console_byte_count(vm_program_console(&vm)), 32U, "WriteBin should commit exactly 32 Program Console bytes");
+        failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 0U, "WriteBin should not change Program Console line count");
+        failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &value) ? 0 : record_failure("EAX read after WriteBin should succeed");
+        failures += expect_u32(value, cases[case_index].value, "WriteBin should preserve EAX bit pattern");
+        failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &value) ? expect_u32(value, 0x11111111U, "WriteBin should preserve EBX") : record_failure("EBX read after WriteBin should succeed");
+        failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ECX, &value) ? expect_u32(value, 0x22222222U, "WriteBin should preserve ECX") : record_failure("ECX read after WriteBin should succeed");
+        failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &value) ? expect_u32(value, 0x33333333U, "WriteBin should preserve EDX") : record_failure("EDX read after WriteBin should succeed");
+        failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESI, &value) ? expect_u32(value, 0x44444444U, "WriteBin should preserve ESI") : record_failure("ESI read after WriteBin should succeed");
+        failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDI, &value) ? expect_u32(value, 0x55555555U, "WriteBin should preserve EDI") : record_failure("EDI read after WriteBin should succeed");
+        failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBP, &value) ? expect_u32(value, 0x66666666U, "WriteBin should preserve EBP") : record_failure("EBP read after WriteBin should succeed");
+        failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &value) ? expect_u32(value, 0x77777777U, "WriteBin should preserve ESP") : record_failure("ESP read after WriteBin should succeed");
+        failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "WriteBin should preserve CF bit");
+        failures += expect_flag(&vm.cpu, VM_FLAG_ZF, false, "WriteBin should preserve ZF bit");
+        failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "WriteBin should preserve SF bit");
+        failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "WriteBin should preserve OF bit even while OF validity is undefined");
+        failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 25U, "WriteBin should preserve OF validity metadata");
+        delta = vm_last_delta(&vm);
+        failures += expect_size(delta->register_change_count, 0U, "WriteBin should report no register changes");
+        failures += expect_size(delta->flag_change_count, 0U, "WriteBin should report no flag changes");
+        failures += expect_size(delta->memory_change_count, 0U, "WriteBin should report no memory changes");
+        failures += expect_size(delta->memory_access_count, 0U, "WriteBin should report no memory accesses");
+
+        vm_deinit(&vm);
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 93 WriteBin exact-fit success and one-byte-short atomic failure.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase93_irvine32_writebin_output_limits_are_atomic(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t value = 0U;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmExecDelta *delta = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_IRVINE32_WRITEBIN, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 26U, "call WriteBin", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteBin exact-fit test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteBin exact-fit program should load");
+    failures += expect_status(vm_append_program_console_output(&vm, "pre", 3U, NULL), VM_EXEC_STATUS_OK, "WriteBin exact-fit prefix should commit");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 35U, 1U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "WriteBin exact-fit byte limit should configure");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x0000000AU) ? 0 : record_failure("seed EAX before exact-fit WriteBin should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "WriteBin should succeed with exactly 32 remaining bytes");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "pre00000000000000000000000000001010", "WriteBin exact-fit should append the complete candidate");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 0U, "WriteBin exact-fit should not change line count");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteBin line-capacity test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteBin line-capacity program should load");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 64U, 1U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "WriteBin line-capacity limit should configure");
+    failures += expect_status(vm_append_program_console_output(&vm, "ok\n", 3U, NULL), VM_EXEC_STATUS_OK, "WriteBin line-capacity prefix should fill the permitted line count");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x0000000AU) ? 0 : record_failure("seed EAX before WriteBin line-capacity test should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "WriteBin should succeed when existing line count is already at its limit");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "ok\n00000000000000000000000000001010", "WriteBin should append digits without consuming another Program Console line");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 1U, "WriteBin should preserve an already-full Program Console line count");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for WriteBin one-byte-short test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "WriteBin one-byte-short program should load");
+    failures += expect_status(vm_append_program_console_output(&vm, "pre", 3U, NULL), VM_EXEC_STATUS_OK, "WriteBin one-byte-short prefix should commit");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 34U, 1U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "WriteBin one-byte-short limit should configure");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x89ABCDEFU) ? 0 : record_failure("seed EAX before failing WriteBin should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0x11111111U) ? 0 : record_failure("seed EBX before failing WriteBin should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ECX, 0x22222222U) ? 0 : record_failure("seed ECX before failing WriteBin should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0x33333333U) ? 0 : record_failure("seed EDX before failing WriteBin should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESI, 0x44444444U) ? 0 : record_failure("seed ESI before failing WriteBin should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDI, 0x55555555U) ? 0 : record_failure("seed EDI before failing WriteBin should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBP, 0x66666666U) ? 0 : record_failure("seed EBP before failing WriteBin should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, 0x77777777U) ? 0 : record_failure("seed ESP before failing WriteBin should succeed");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_CF) ? 0 : record_failure("seed CF before failing WriteBin should succeed");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_ZF) ? 0 : record_failure("seed ZF before failing WriteBin should succeed");
+    failures += vm_cpu_clear_flag(&vm.cpu, VM_FLAG_SF) ? 0 : record_failure("seed SF before failing WriteBin should succeed");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_OF) ? 0 : record_failure("seed OF bit before failing WriteBin should succeed");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 25U, 1U, 250U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity before failing WriteBin should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED, "WriteBin should fail when only 31 bytes remain");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "pre", "WriteBin output-limit failure should append no partial digits");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 0U, "WriteBin output-limit failure should preserve line count");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &value) ? 0 : record_failure("EAX read after failing WriteBin should succeed");
+    failures += expect_u32(value, 0x89ABCDEFU, "WriteBin failure should preserve EAX bit pattern");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &value) ? expect_u32(value, 0x11111111U, "WriteBin failure should preserve EBX") : record_failure("EBX read after failing WriteBin should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ECX, &value) ? expect_u32(value, 0x22222222U, "WriteBin failure should preserve ECX") : record_failure("ECX read after failing WriteBin should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &value) ? expect_u32(value, 0x33333333U, "WriteBin failure should preserve EDX") : record_failure("EDX read after failing WriteBin should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESI, &value) ? expect_u32(value, 0x44444444U, "WriteBin failure should preserve ESI") : record_failure("ESI read after failing WriteBin should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDI, &value) ? expect_u32(value, 0x55555555U, "WriteBin failure should preserve EDI") : record_failure("EDI read after failing WriteBin should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBP, &value) ? expect_u32(value, 0x66666666U, "WriteBin failure should preserve EBP") : record_failure("EBP read after failing WriteBin should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &value) ? expect_u32(value, 0x77777777U, "WriteBin failure should preserve ESP") : record_failure("ESP read after failing WriteBin should succeed");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "WriteBin failure should preserve CF bit");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "WriteBin failure should preserve ZF bit");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, false, "WriteBin failure should preserve SF bit");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "WriteBin failure should preserve OF bit even while OF validity is undefined");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 25U, "WriteBin failure should preserve flag-validity metadata");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta->register_change_count, 0U, "WriteBin failure should report no register changes");
+    failures += expect_size(delta->flag_change_count, 0U, "WriteBin failure should report no flag changes");
+    failures += expect_size(delta->memory_change_count, 0U, "WriteBin failure should report no memory changes");
+    failures += expect_size(delta->memory_access_count, 0U, "WriteBin failure should report no memory accesses");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED) {
+        failures += record_failure("WriteBin one-byte-short failure should record the shared output-limit diagnostic");
+    } else {
+        failures += expect_u32(diagnostic->instruction.source_line, 26U, "WriteBin output-limit diagnostic should preserve the call line");
+        failures += expect_string(diagnostic->instruction.source_text, "call WriteBin", "WriteBin output-limit diagnostic should preserve the full call instruction text");
     }
 
     vm_deinit(&vm);
@@ -7237,7 +7396,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Phase 92 Irvine32 WriteHex coverage.
+/// Runs all executor tests through Phase 93 Irvine32 WriteBin coverage.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -7270,6 +7429,8 @@ int main(void) {
     failures += test_phase91_irvine32_writeint_output_limits_are_atomic();
     failures += test_phase92_irvine32_writehex_formats_and_preserves_state();
     failures += test_phase92_irvine32_writehex_output_limits_are_atomic();
+    failures += test_phase93_irvine32_writebin_formats_and_preserves_state();
+    failures += test_phase93_irvine32_writebin_output_limits_are_atomic();
     failures += test_neg_register_memory_and_flags();
     failures += test_phase20_error_paths();
     failures += test_adc_register_carry_propagation();
@@ -7379,6 +7540,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 92 Irvine32 WriteHex coverage passed.");
+    puts("Executor tests through Phase 93 Irvine32 WriteBin coverage passed.");
     return 0;
 }

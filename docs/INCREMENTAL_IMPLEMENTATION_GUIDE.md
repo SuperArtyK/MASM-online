@@ -26841,10 +26841,9 @@ Bare `DumpRegs` after include must report:
 Every successful call emits exactly four LF-terminated lines:
 
 ```text
-EAX=<eax8> EBX=<ebx8> ECX=<ecx8> EDX=<edx8>\n
-ESI=<esi8> EDI=<edi8> EBP=<ebp8> ESP=<esp8>\n
-EIP=<eip8> EFLAGS=<eflags8>\n
-CF=<cf1> ZF=<zf1> SF=<sf1> OF=<of1>\n
+\n  EAX=<eax8>  EBX=<ebx8>  ECX=<ecx8>  EDX=<edx8>\n
+  ESI=<esi8>  EDI=<edi8>  EBP=<ebp8>  ESP=<esp8>\n
+  EIP=<eip8>  EFL=<eflags8>  CF=<cf1>  SF=<sf1>  ZF=<zf1>  OF=<of1>  AF=X  PF=X\n
 ```
 
 The displayed `\n` in this document means one internal LF byte. It is not two literal Program Console characters.
@@ -26862,6 +26861,7 @@ Formatting rules:
 - deterministic modeled flag values are printed even when validity metadata marks a flag architecturally undefined;
 - `EIP` is the Phase 68B pseudo-code-address/control-state display value;
 - `EIP` must not expose a native x86 address, PE/RVA/linker address, host address, Wasm address, raw VM instruction index, source byte offset, or source-writable register value.
+- `AF` and `PF` flags are put as placeholders, do not implement them. Display them as shown in the example. When they are implemented in the later milestones, the values of `X` would need to be changed to actual AF and PF values
 
 ### Runtime behavior and precedence
 

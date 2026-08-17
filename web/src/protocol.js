@@ -16,16 +16,16 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 /** @typedef {{runSource?: (source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown}} WorkerRuntime */
 
 /** Latest numeric MASM source-run phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE = 92;
+export const IMPLEMENTED_PHASE = 93;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
 export const IMPLEMENTED_PHASE_SUFFIX = "";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 92 - Irvine32 WriteHex";
+export const IMPLEMENTED_PHASE_NAME = "Phase 93 - Irvine32 WriteBin";
 
 /** Source-run JSON output-contract identifier expected by the current browser/protocol layer. */
-export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-92-irvine32-writehex-contract-v1";
+export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-93-irvine32-writebin-contract-v1";
 
 /**
  * Creates the initial worker readiness response.

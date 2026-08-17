@@ -1,3 +1,3 @@
-# Windows API alias in a merged category
+# Windows API incorrectly classified as future simulator work
 
-`WriteBin` and Windows API execution are future features.
+`DumpRegs` and Windows API execution are future features.

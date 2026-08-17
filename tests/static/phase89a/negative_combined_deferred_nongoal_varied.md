@@ -1,3 +1,3 @@
-# Merged categories with varied wording
+# Deferred and non-goal categories merged with varied wording
 
-`WriteBin` and WinAPI execution are both planned for later.
+`DumpRegs` and WinAPI execution are both planned for later.

@@ -6,10 +6,10 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 92 - Irvine32 WriteHex |
-| Runtime/source-run MASM behavior phase | Phase 92 - Irvine32 WriteHex |
+| Current milestone | Phase 93 - Irvine32 WriteBin |
+| Runtime/source-run MASM behavior phase | Phase 93 - Irvine32 WriteBin |
 
-Phase 92 adds direct virtual Irvine32 `WriteHex` fixed-width uppercase hexadecimal output while preserving the previously implemented Irvine32 output forms and keeping future routine forms deferred.
+Phase 93 adds direct virtual Irvine32 `WriteBin` fixed-width 32-bit binary output while preserving the previously implemented Irvine32 output forms and keeping `INVOKE WriteBin` and later routine forms deferred.
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -48,7 +48,7 @@ At a high level, the current subset includes:
 - procedure-entry and call-target classification metadata for parser/tests;
 - `PROC USES` parsing metadata for `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, and `EDI`, stored in declared order;
 - direct-CALL `PROC USES` runtime save/restore with checked automatic stack writes/reads, `stack-overflow` and `stack-underflow` diagnostics, listed-register preservation, modeled flag preservation, `EAX` return-value behavior when omitted, and `ESP` balance;
-- `LOCAL` declaration metadata for supported scalar, array, and comma-separated procedure-local declarations before executable instructions, automatic runtime LOCAL frames on selected-entry and direct-CALL procedure paths, supported Phase 80 LOCAL operands such as `mov temp, eax`, `mov eax, temp`, `mov BYTE PTR buf[0], 'A'`, `mov al, BYTE PTR buf[1]`, and `lea eax, temp`, limited parser-owned Phase 81 `PROTO` metadata for zero-argument and named `DWORD`/`SDWORD` prototypes, Phase 82 zero-argument `INVOKE Helper` / `invoke Helper` to same-file user procedures, Phase 83 helper-level `ADDR symbol` record preparation, and Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering with exact `ret imm16` cleanup validation, Phase 85 separate Program Console stream infrastructure, Phase 86 Program Console output limits and serialization, Phase 87 virtual Irvine32 `Crlf`, Phase 88 virtual Irvine32 `WriteChar`, Phase 89 virtual Irvine32 `WriteString`, Phase 90 virtual Irvine32 `WriteDec`, Phase 91 virtual Irvine32 `WriteInt`, and Phase 92 virtual Irvine32 `WriteHex`;
+- `LOCAL` declaration metadata for supported scalar, array, and comma-separated procedure-local declarations before executable instructions, automatic runtime LOCAL frames on selected-entry and direct-CALL procedure paths, supported Phase 80 LOCAL operands such as `mov temp, eax`, `mov eax, temp`, `mov BYTE PTR buf[0], 'A'`, `mov al, BYTE PTR buf[1]`, and `lea eax, temp`, limited parser-owned Phase 81 `PROTO` metadata for zero-argument and named `DWORD`/`SDWORD` prototypes, Phase 82 zero-argument `INVOKE Helper` / `invoke Helper` to same-file user procedures, Phase 83 helper-level `ADDR symbol` record preparation, and Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering with exact `ret imm16` cleanup validation, Phase 85 separate Program Console stream infrastructure, Phase 86 Program Console output limits and serialization, Phase 87 virtual Irvine32 `Crlf`, Phase 88 virtual Irvine32 `WriteChar`, Phase 89 virtual Irvine32 `WriteString`, Phase 90 virtual Irvine32 `WriteDec`, Phase 91 virtual Irvine32 `WriteInt`, Phase 92 virtual Irvine32 `WriteHex`, and Phase 93 virtual Irvine32 `WriteBin`;
 - instruction-count watchdog behavior;
 - modeled `CF`, `ZF`, `SF`, and `OF` behavior where implemented;
 - structured diagnostics and rendered Simulator Messages;
@@ -59,7 +59,7 @@ Future/deferred simulator features include:
 
 - `loop`;
 - procedure-frame and calling-convention features beyond Phase 84 limited same-file user-procedure `INVOKE` DWORD argument lowering, Phase 83 helper-level `ADDR symbol` preparation, Phase 82 zero-argument same-file user-procedure `INVOKE`, Phase 81 parser-only `PROTO` metadata, and Phase 80 LOCAL operand access, including Irvine32 routine `INVOKE` dispatch beyond zero-argument `INVOKE Crlf`, source-level `ADDR` outside accepted INVOKE arguments, `OFFSET local`, computed `ADDR` expressions, scaled-index LOCAL addressing, QWORD/SQWORD executable LOCAL memory operands, executable `PROTO` behavior, pointer or unnamed prototype parameters, `VARARG`, runtime parameters, and calling conventions;
-- selected Irvine32 routine dispatch beyond virtual `Crlf`, direct `WriteChar`, direct `WriteString`, direct `WriteDec`, direct `WriteInt`, and direct `WriteHex`;
+- selected Irvine32 routine dispatch beyond virtual `Crlf`, direct `WriteChar`, direct `WriteString`, direct `WriteDec`, direct `WriteInt`, direct `WriteHex`, and direct `WriteBin`;
 - active-time or wall-clock watchdog behavior;
 - debugger/editor branch behavior;
 - selected macro-compatibility conveniences explicitly assigned to later accepted milestones.

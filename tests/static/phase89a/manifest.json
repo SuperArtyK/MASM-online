@@ -440,7 +440,35 @@
       "expect": "fail",
       "expectedCode": "invoke-writehex-implemented",
       "expectedLine": 3
+    },
+    {
+      "path": "negative_missing_writebin.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-writebin",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_direct_writebin_deferred.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "direct-writebin-deferred",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_stale_writebin_semicolon_deferred_boundary.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-writebin",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_invoke_writebin_implemented.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "invoke-writebin-implemented",
+      "expectedLine": 3
     }
   ],
-  "defaultEditorSourceSha256": "8b73b418c4761568c929c2621b1399d400ce69842ed48fe7f68fcf290171394a"
+  "defaultEditorSourceSha256": "d6afceaecc213f8db4e662374c38d466cf465e049f946c689730e4728f369821"
 }

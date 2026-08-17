@@ -1,3 +1,3 @@
-# Shared unsupported status across different categories
+# Combined deferred simulator and non-goal status
 
-`WriteBin` and WinAPI execution remain unsupported.
+`DumpRegs` and WinAPI execution remain unsupported.

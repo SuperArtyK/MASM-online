@@ -1,3 +1,3 @@
-# Active status
+# Stale WriteHex boundary after a semicolon
 
-Deferred simulator features include `loop`; Irvine32 routines beyond virtual `Crlf`, direct `WriteChar`, direct `WriteString`, direct `WriteDec`, and direct `WriteInt`; debugger stepping remains future work.
+Deferred simulator features include expanded Irvine32 input; the current Irvine32 output set includes `Crlf`, direct `WriteChar`, direct `WriteString`, direct `WriteDec`, direct `WriteInt`, and direct `WriteBin`.
