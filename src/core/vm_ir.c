@@ -264,6 +264,8 @@ const char *vm_ir_opcode_name(VmIrOpcode opcode) {
             return "writehex";
         case VM_IR_OPCODE_IRVINE32_WRITEBIN:
             return "writebin";
+        case VM_IR_OPCODE_IRVINE32_DUMPREGS:
+            return "dumpregs";
         default:
             return NULL;
     }

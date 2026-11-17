@@ -1680,7 +1680,7 @@ External/API non-goal forms include:
 - host-filesystem include or library targets;
 - far calls, segmented calls, or native-address calls when they imply native x86, PE, Windows, or linker behavior.
 
-Recognized Irvine32 routine and terminator names are not user procedure symbols. Before the owning Irvine32 routine-dispatch phase implements a specific routine, a source form such as `call DumpRegs` must be classified as a recognized-but-deferred or recognized-but-unsupported Irvine32 routine call, not as a user-procedure call. Implemented direct forms such as `call WriteString`, `call WriteDec`, `call WriteInt`, `call WriteHex`, and `call WriteBin` must route through their simulator-defined Irvine32 intrinsic paths rather than user-procedure lookup.
+Recognized Irvine32 routine and terminator names are not user procedure symbols. Before the owning Irvine32 routine-dispatch phase implements a specific routine, a source form such as `call DumpMem` must be classified as a recognized-but-deferred or recognized-but-unsupported Irvine32 routine call, not as a user-procedure call. Implemented direct forms such as `call WriteString`, `call WriteDec`, `call WriteInt`, `call WriteHex`, `call WriteBin`, and `call DumpRegs` must route through their simulator-defined Irvine32 intrinsic paths rather than user-procedure lookup.
 
 A future phase may implement selected Irvine32 routine dispatch, but that work must remain separate from direct user-procedure `CALL`. Direct user-procedure `CALL` must not execute, alias, shadow, or special-case Irvine32 routine names as host callbacks, external imports, WinAPI calls, PE import thunks, linker symbols, or native procedures.
 
@@ -2653,7 +2653,7 @@ After `PF` and `AF` are implemented and integrated:
 - final register/flag output must include `PF` and `AF`;
 - debugger flags table must include `PF` and `AF`;
 - last-step flag deltas must show `PF` and `AF` changes when they change;
-- `DumpRegs` must include `PF` and `AF` in its Program Console output once its update phase is reached;
+- `DumpRegs` must include `PF` and `AF` as modeled values once the future extended-flag display update phase is reached; Phase 94 intentionally renders them as literal `X` placeholders;
 - source-run JSON and worker protocol payloads must remain structured-clone-safe and JSON-compatible;
 - rendered output must remain deterministic and testable.
 
@@ -3871,9 +3871,9 @@ External/API calls are not a future CALL target category. They are non-goals. Di
 CALL target classification must preserve this boundary:
 
 - `call UserProc` may become a user procedure call only when `UserProc PROC` exists and the CALL phase accepts direct user-procedure calls.
-- `call WriteString`, `call WriteDec`, `call WriteInt`, `call WriteHex`, and `call WriteBin` must classify through the Irvine32 registry, not through the user procedure table.
-- Before the owning Irvine32 dispatch phase implements a recognized routine, that direct call must produce a recognized-deferred or recognized-unsupported Irvine32 diagnostic; for example, `call DumpRegs` remains deferred until its owning phase.
-- After Phase 89, direct `call WriteString` routes to simulator-defined Irvine32 behavior, after Phase 90 direct `call WriteDec` does likewise, after Phase 91 direct `call WriteInt` does likewise, after Phase 92 direct `call WriteHex` does likewise, and after Phase 93 direct `call WriteBin` does likewise; none becomes an ordinary user procedure symbol.
+- `call WriteString`, `call WriteDec`, `call WriteInt`, `call WriteHex`, `call WriteBin`, and `call DumpRegs` must classify through the Irvine32 registry, not through the user procedure table.
+- Before the owning Irvine32 dispatch phase implements a recognized routine, that direct call must produce a recognized-deferred or recognized-unsupported Irvine32 diagnostic; for example, `call DumpMem` remains deferred until its owning phase.
+- After Phase 89, direct `call WriteString` routes to simulator-defined Irvine32 behavior, after Phase 90 direct `call WriteDec` does likewise, after Phase 91 direct `call WriteInt` does likewise, after Phase 92 direct `call WriteHex` does likewise, after Phase 93 direct `call WriteBin` does likewise, and after Phase 94 direct `call DumpRegs` does likewise; none becomes an ordinary user procedure symbol.
 - A user declaration such as `WriteString PROC` must be rejected or otherwise handled through the reserved-word/registry collision policy. It must not silently shadow the virtual Irvine32 routine.
 
 `OPTION CASEMAP:NONE` affects accepted user-defined symbols. It does not make recognized Irvine32 routine names case-sensitive, and it does not make recognized Irvine32 routine names available as user procedure names.
@@ -4189,11 +4189,32 @@ WriteBin:
   Write no simulated memory.
   Write no Simulator Messages on success except non-program-output diagnostics required by active policy.
   Implementing WriteBin must not alter existing WriteDec, WriteInt, or WriteHex behavior and must not implement later Irvine32 input/debug/random/file routine families, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation.
+
+DumpRegs:
+  Implemented by Phase 94 for the direct virtual Irvine32 call form defined here.
+  Accepted executable source form after INCLUDE Irvine32.inc:
+    call DumpRegs
+  Matching must be case-insensitive for the Irvine32 routine name even when OPTION CASEMAP:NONE is active.
+  CALL DumpRegs without INCLUDE Irvine32.inc must be an assembly error.
+  Bare DumpRegs must be an assembly error.
+  INVOKE DumpRegs remains future-owned until a later accepted phase implements that exact source form.
+  Output: append exactly 180 bytes to Program Console with exactly four LF bytes and zero CR bytes.
+  Layout: \n  EAX=<eax8>  EBX=<ebx8>  ECX=<ecx8>  EDX=<edx8>\n  ESI=<esi8>  EDI=<edi8>  EBP=<ebp8>  ESP=<esp8>\n  EIP=<eip8>  EFL=<eflags8>  CF=<cf1>  SF=<sf1>  ZF=<zf1>  OF=<of1>  AF=X  PF=X\n
+  Every register, EIP, and EFL value uses exactly eight uppercase hexadecimal digits with no prefix or suffix.
+  EFL derives only CF bit 0, ZF bit 6, SF bit 7, and OF bit 11; every other EFL bit is zero in the Phase 94 display contract.
+  AF=X and PF=X are literal placeholders in Phase 94 and do not implement AF or PF semantics.
+  EIP is the Phase 68B displayed pseudo-EIP for the executing CALL DumpRegs instruction.
+  Preflight the complete candidate against Program Console byte and line limits before appending any candidate byte.
+  On output-limit failure, append none of the failing dump, preserve previous Program Console text, and report console-output-limit-exceeded against the full CALL instruction span.
+  Preserve EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, modeled flags, flag-validity metadata, simulated memory, and memory-change rows.
+  Read and write no simulated memory and create no memory-access rows.
+  Write dump text only to Program Console, never Simulator Messages.
+  Implementing DumpRegs must not implement INVOKE DumpRegs, DumpMem, AF/PF semantics, later Irvine32 input/random/file routine families, generalized Irvine32 dispatch, WinAPI behavior, PE/linking behavior, external libraries, host callbacks, host filesystem behavior, native process behavior, or full x86 emulation.
 ```
 
-`DumpRegs` and `DumpMem` are future-owned until their guide phases explicitly implement them. Their names must not be used as permission to infer Irvine32, MASM32, Windows, debugger, PE/linker, host, or full-x86 behavior.
+`DumpMem` remains future-owned until its guide phase explicitly implements it. The implemented direct `DumpRegs` form must not be used as permission to infer additional Irvine32, MASM32, Windows, debugger, PE/linker, host, or full-x86 behavior. The `DumpMem` name likewise grants no implementation permission before its owning guide phase.
 
-Before `DumpRegs` is implemented, the implementation guide must define the exact Program Console text contract, including register order, flag order, hex width, uppercase/lowercase policy, spaces, line-feed behavior, pseudo-EIP source, EFLAGS derivation, no-partial-output behavior, preservation rules, source-form diagnostics, rendered-message diagnostics, and source-run output-contract token. The first implementation must not print host addresses, Wasm addresses, native instruction pointers, PE/RVA/linker addresses, source byte offsets, or raw VM instruction indexes as `EIP`.
+The Phase 94 `DumpRegs` implementation guide section defines the exact Program Console text contract, including register order, flag order, hex width, uppercase/lowercase policy, spaces, line-feed behavior, pseudo-EIP source, EFLAGS derivation, no-partial-output behavior, preservation rules, source-form diagnostics, rendered-message diagnostics, and source-run output-contract token. The implemented Phase 94 form must not print host addresses, Wasm addresses, native instruction pointers, PE/RVA/linker addresses, source byte offsets, or raw VM instruction indexes as `EIP`.
 
 Before `DumpMem` is implemented, the implementation guide must define the exact calling convention, accepted element sizes, maximum count, checked-address arithmetic behavior, checked memory-read behavior, optional memory-policy behavior, row width, address format, element byte order, element text width, line-feed behavior, no-partial-output behavior, diagnostic precedence, rendered-message diagnostics, and source-run output-contract token. `DumpMem` reads simulated VM memory only. It must not read host process memory, browser memory, Wasm implementation internals, PE files, source files, external-library memory, or the host filesystem.
 
@@ -4238,7 +4259,7 @@ DumpRegs:
   Must include EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, EIP, EFLAGS, and modeled flags.
   The EIP value printed by DumpRegs must be the displayed pseudo-EIP/control-state value defined by the control-state display contract and the Phase 68B EIP display rules.
   DumpRegs must not print a native x86 instruction address, PE/RVA/linker address, host address, raw VM instruction index, source byte offset, or source-writable register value as EIP.
-  When DumpRegs is implemented, its Program Console register formatting must follow the same high-level educational group order used by final register display unless the DumpRegs-owning implementation-guide phase explicitly defines a different tested Program Console layout.
+  The implemented DumpRegs Program Console register formatting must follow the same high-level educational group order used by final register display unless the DumpRegs-owning implementation-guide phase explicitly defines a different tested Program Console layout.
   DumpRegs grouping is Program Console formatting only. It must not create Simulator Messages diagnostics, source-run JSON diagnostics, VM state changes, register-value changes, or protocol-schema changes.
 
 DumpMem:
@@ -4295,7 +4316,7 @@ If a precise future phase is known, the diagnostic should name both the phase nu
 Acceptable diagnostic wording examples:
 
 ```text
-DumpRegs is a recognized Irvine32 routine, but executable register-dump behavior is deferred to its owning later phase.
+DumpMem is a recognized Irvine32 routine, but executable memory-dump behavior is deferred to its owning later phase.
 ```
 
 ```text

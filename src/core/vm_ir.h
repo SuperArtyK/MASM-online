@@ -164,6 +164,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_IRVINE32_WRITEHEX,
     /// Append the fixed-width binary representation of EAX for virtual Irvine32 `WriteBin`.
     VM_IR_OPCODE_IRVINE32_WRITEBIN,
+    /// Append the deterministic modeled register and flag snapshot for virtual Irvine32 `DumpRegs`.
+    VM_IR_OPCODE_IRVINE32_DUMPREGS,
     /// Number of currently supported operation codes.
     VM_IR_OPCODE_COUNT
 } VmIrOpcode;

@@ -28,7 +28,7 @@
  * Phase 82 zero-argument user-procedure INVOKE lowering and diagnostics,
  * Phase 83 ADDR helper preparation, Phase 84 limited INVOKE DWORD argument
  * lowering and cleanup validation, Phase 86 Program Console output-limit
- * serialization, Phase 87 Irvine32 Crlf, Phase 88 Irvine32 WriteChar, Phase 89 Irvine32 WriteString, Phase 90 Irvine32 WriteDec, Phase 91 Irvine32 WriteInt, Phase 92 Irvine32 WriteHex, and Phase 93 Irvine32 WriteBin, plus recovered unsupported-feature
+ * serialization, Phase 87 Irvine32 Crlf, Phase 88 Irvine32 WriteChar, Phase 89 Irvine32 WriteString, Phase 90 Irvine32 WriteDec, Phase 91 Irvine32 WriteInt, Phase 92 Irvine32 WriteHex, Phase 93 Irvine32 WriteBin, and Phase 94 Irvine32 DumpRegs, plus recovered unsupported-feature
  * diagnostics, then reports a compact JSON result for the UI.
  */
 
@@ -95,16 +95,16 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase reported to JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 93U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 94U
 
-/// Suffix for the current Phase 93 runtime/source-run behavior phase.
+/// Suffix for the current Phase 94 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 93 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 93 - Irvine32 WriteBin"
+/// Full name of the current Phase 94 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 94 - Irvine32 DumpRegs"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 93 Irvine32 WriteBin Program Console output.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-93-irvine32-writebin-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 94 Irvine32 DumpRegs Program Console output.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-94-irvine32-dumpregs-contract-v1"
 
 /// Canonical empty Program Console JSON object for source-run fallback responses.
 #define MASM32_SIM_WASM_EMPTY_PROGRAM_CONSOLE_JSON "\"programConsole\":{\"text\":\"\",\"truncated\":false,\"byteCount\":0,\"lineCount\":0,\"maxBytes\":1048576,\"maxLines\":10000,\"limitExceeded\":false,\"limitKind\":null}"

@@ -468,7 +468,28 @@
       "expect": "fail",
       "expectedCode": "invoke-writebin-implemented",
       "expectedLine": 3
+    },
+    {
+      "path": "negative_missing_dumpregs.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "missing-direct-dumpregs",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_direct_dumpregs_deferred.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "direct-dumpregs-deferred",
+      "expectedLine": 3
+    },
+    {
+      "path": "negative_invoke_dumpregs_implemented.md",
+      "role": "active-current-status",
+      "expect": "fail",
+      "expectedCode": "invoke-dumpregs-implemented",
+      "expectedLine": 3
     }
   ],
-  "defaultEditorSourceSha256": "d6afceaecc213f8db4e662374c38d466cf465e049f946c689730e4728f369821"
+  "defaultEditorSourceSha256": "af200a4255fddae3c1a17ce15425d0fcd11e8355b5286aa42172eb5217a5c274"
 }

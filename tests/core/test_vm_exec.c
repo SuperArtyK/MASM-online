@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 93 Irvine32 WriteBin coverage.
+ * @brief Unit tests for the VM executor through Phase 94 Irvine32 DumpRegs coverage.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
@@ -8,7 +8,7 @@
  * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end-mode compatibility, Phase 71F explicit-exit fallthrough regression coverage, Phase 72
  * call-depth resource-limit coverage, Phase 72A source-level PUSH/POP,
  * Phase 73 LEAVE frame teardown, Phase 74 RET imm16 cleanup, and
- * Phase 77 PROC USES runtime save/restore, Phase 79 automatic LOCAL stack allocation/lifetime, Phase 80 LOCAL operand active-frame checks, Phase 87 virtual Irvine32 Crlf output, Phase 88 virtual Irvine32 WriteChar output, Phase 89 virtual Irvine32 WriteString output, Phase 90 virtual Irvine32 WriteDec output, Phase 91 virtual Irvine32 WriteInt output, Phase 92 virtual Irvine32 WriteHex output, and Phase 93 virtual Irvine32 WriteBin output. They intentionally avoid parser and browser UI behavior except for the Phase 42 virtual exit terminator and focused Irvine32 routine contracts.
+ * Phase 77 PROC USES runtime save/restore, Phase 79 automatic LOCAL stack allocation/lifetime, Phase 80 LOCAL operand active-frame checks, Phase 87 virtual Irvine32 Crlf output, Phase 88 virtual Irvine32 WriteChar output, Phase 89 virtual Irvine32 WriteString output, Phase 90 virtual Irvine32 WriteDec output, Phase 91 virtual Irvine32 WriteInt output, Phase 92 virtual Irvine32 WriteHex output, Phase 93 virtual Irvine32 WriteBin output, and Phase 94 virtual Irvine32 DumpRegs output. They intentionally avoid parser and browser UI behavior except for the Phase 42 virtual exit terminator and focused Irvine32 routine contracts.
  */
 
 #include <stdbool.h>
@@ -1505,6 +1505,228 @@ static int test_phase93_irvine32_writebin_output_limits_are_atomic(void) {
     }
 
     vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 94 DumpRegs emits the exact four-line register/flag snapshot.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase94_irvine32_dumpregs_formats_and_preserves_state(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t value = 0U;
+    uint8_t memory_value = 0U;
+    const VmExecDelta *delta = NULL;
+    const char *console_text = NULL;
+    const char *expected =
+        "\n  EAX=12345678  EBX=9ABCDEF0  ECX=00000001  EDX=FFFFFFFF\n"
+        "  ESI=11111111  EDI=22222222  EBP=33333333  ESP=44444444\n"
+        "  EIP=00401004  EFL=000008C1  CF=1  SF=1  ZF=1  OF=1  AF=X  PF=X\n";
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_NOP, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 25U, "nop", 0U},
+        {VM_IR_OPCODE_IRVINE32_DUMPREGS, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 26U, "call DumpRegs", 1U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for DumpRegs formatting test");
+    failures += expect_status(vm_load_program(&vm, program, 2U), VM_EXEC_STATUS_OK, "DumpRegs formatting program should load");
+    failures += vm_memory_write_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, 0xA5U, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("seed memory sentinel should succeed before DumpRegs");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x12345678U) ? 0 : record_failure("seed EAX should succeed before DumpRegs");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0x9ABCDEF0U) ? 0 : record_failure("seed EBX should succeed before DumpRegs");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ECX, 0x00000001U) ? 0 : record_failure("seed ECX should succeed before DumpRegs");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0xFFFFFFFFU) ? 0 : record_failure("seed EDX should succeed before DumpRegs");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESI, 0x11111111U) ? 0 : record_failure("seed ESI should succeed before DumpRegs");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDI, 0x22222222U) ? 0 : record_failure("seed EDI should succeed before DumpRegs");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBP, 0x33333333U) ? 0 : record_failure("seed EBP should succeed before DumpRegs");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, 0x44444444U) ? 0 : record_failure("seed ESP should succeed before DumpRegs");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_CF) ? 0 : record_failure("seed CF should succeed before DumpRegs");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_ZF) ? 0 : record_failure("seed ZF should succeed before DumpRegs");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_SF) ? 0 : record_failure("seed SF should succeed before DumpRegs");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_OF) ? 0 : record_failure("seed OF should succeed before DumpRegs");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 24U, 1U, 240U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity before DumpRegs should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "leading NOP should execute before DumpRegs");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "DumpRegs should execute successfully");
+    console_text = vm_console_text(vm_program_console(&vm));
+    failures += expect_string(console_text, expected, "DumpRegs should emit the exact Phase 94 four-line Program Console text");
+    failures += expect_size(vm_console_byte_count(vm_program_console(&vm)), 180U, "DumpRegs should commit exactly 180 bytes");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 4U, "DumpRegs should commit exactly four LF bytes");
+    failures += expect_size(strchr(console_text, '\r') == NULL ? 0U : 1U, 0U, "DumpRegs output should contain no CR bytes");
+    failures += expect_size(console_text[179] == '\n' ? 1U : 0U, 1U, "DumpRegs final byte should be LF");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &value) ? expect_u32(value, 0x12345678U, "DumpRegs should preserve EAX") : record_failure("EAX read after DumpRegs should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &value) ? expect_u32(value, 0x9ABCDEF0U, "DumpRegs should preserve EBX") : record_failure("EBX read after DumpRegs should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ECX, &value) ? expect_u32(value, 0x00000001U, "DumpRegs should preserve ECX") : record_failure("ECX read after DumpRegs should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &value) ? expect_u32(value, 0xFFFFFFFFU, "DumpRegs should preserve EDX") : record_failure("EDX read after DumpRegs should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESI, &value) ? expect_u32(value, 0x11111111U, "DumpRegs should preserve ESI") : record_failure("ESI read after DumpRegs should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDI, &value) ? expect_u32(value, 0x22222222U, "DumpRegs should preserve EDI") : record_failure("EDI read after DumpRegs should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBP, &value) ? expect_u32(value, 0x33333333U, "DumpRegs should preserve EBP") : record_failure("EBP read after DumpRegs should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &value) ? expect_u32(value, 0x44444444U, "DumpRegs should preserve ESP") : record_failure("ESP read after DumpRegs should succeed");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "DumpRegs should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "DumpRegs should preserve ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "DumpRegs should preserve SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "DumpRegs should print and preserve deterministic OF even when validity is undefined");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, true, NULL, NULL, 0U, "DumpRegs should preserve valid CF metadata");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_ZF, true, NULL, NULL, 0U, "DumpRegs should preserve valid ZF metadata");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_SF, true, NULL, NULL, 0U, "DumpRegs should preserve valid SF metadata");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 24U, "DumpRegs should preserve flag-validity metadata");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta->register_change_count, 0U, "DumpRegs should report no source-visible register changes");
+    failures += expect_size(delta->flag_change_count, 0U, "DumpRegs should report no flag changes");
+    failures += expect_size(delta->memory_change_count, 0U, "DumpRegs should report no memory changes");
+    failures += expect_size(delta->memory_access_count, 0U, "DumpRegs should report no memory accesses");
+    failures += vm_memory_read_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, &memory_value, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory sentinel read should succeed after DumpRegs");
+    failures += expect_u32((uint32_t)memory_value, 0xA5U, "DumpRegs should preserve simulated memory bytes");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 94 DumpRegs prints deterministic zero bits despite undefined validity at the base pseudo-EIP.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase94_irvine32_dumpregs_undefined_zero_and_first_eip(void) {
+    int failures = 0;
+    Vm vm;
+    const char *expected =
+        "\n  EAX=00000000  EBX=00000000  ECX=00000000  EDX=00000000\n"
+        "  ESI=00000000  EDI=00000000  EBP=00000000  ESP=00000000\n"
+        "  EIP=00401000  EFL=00000000  CF=0  SF=0  ZF=0  OF=0  AF=X  PF=X\n";
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_IRVINE32_DUMPREGS, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "call DumpRegs", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for DumpRegs undefined-zero test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "DumpRegs undefined-zero program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0U) ? 0 : record_failure("seed zero EAX before DumpRegs should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0U) ? 0 : record_failure("seed zero EBX before DumpRegs should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ECX, 0U) ? 0 : record_failure("seed zero ECX before DumpRegs should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0U) ? 0 : record_failure("seed zero EDX before DumpRegs should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESI, 0U) ? 0 : record_failure("seed zero ESI before DumpRegs should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDI, 0U) ? 0 : record_failure("seed zero EDI before DumpRegs should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBP, 0U) ? 0 : record_failure("seed zero EBP before DumpRegs should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, 0U) ? 0 : record_failure("seed zero ESP before DumpRegs should succeed");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_CF, "seed-invalid-zero", "seed", "seed.asm", 1U, 1U, 0U, 4U, "seed", 0U) ? 0 : record_failure("seed zero-valued CF invalidity before DumpRegs should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "DumpRegs should execute with zero-valued undefined CF");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), expected, "DumpRegs should print zero deterministic flags and the base pseudo-EIP exactly");
+    failures += expect_size(vm_console_byte_count(vm_program_console(&vm)), 180U, "DumpRegs zero-state output should remain exactly 180 bytes");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 4U, "DumpRegs zero-state output should remain exactly four LF bytes");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "DumpRegs should preserve deterministic zero CF while validity is undefined");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, false, "seed-invalid-zero", "seed", 1U, "DumpRegs should preserve undefined metadata for a deterministic zero flag");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 94 DumpRegs exact-fit limits and atomic output-limit failures.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase94_irvine32_dumpregs_output_limits_are_atomic(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t value = 0U;
+    uint8_t memory_value = 0U;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmExecDelta *delta = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_IRVINE32_DUMPREGS, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 26U, "call DumpRegs", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for DumpRegs exact-fit test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "DumpRegs exact-fit program should load");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 180U, 4U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "DumpRegs exact-fit limits should configure");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "DumpRegs should succeed with exact 180-byte/four-line capacity");
+    failures += expect_size(vm_console_byte_count(vm_program_console(&vm)), 180U, "DumpRegs exact-fit should commit all 180 bytes");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 4U, "DumpRegs exact-fit should commit all four LF bytes");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for DumpRegs one-byte-short test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "DumpRegs one-byte-short program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x89ABCDEFU) ? 0 : record_failure("seed EAX before failing DumpRegs should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0x11111111U) ? 0 : record_failure("seed EBX before failing DumpRegs should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ECX, 0x22222222U) ? 0 : record_failure("seed ECX before failing DumpRegs should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0x33333333U) ? 0 : record_failure("seed EDX before failing DumpRegs should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESI, 0x44444444U) ? 0 : record_failure("seed ESI before failing DumpRegs should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDI, 0x55555555U) ? 0 : record_failure("seed EDI before failing DumpRegs should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBP, 0x66666666U) ? 0 : record_failure("seed EBP before failing DumpRegs should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, 0x77777777U) ? 0 : record_failure("seed ESP before failing DumpRegs should succeed");
+    failures += vm_memory_write_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, 0x5AU, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("seed memory sentinel before failing DumpRegs should succeed");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_CF) ? 0 : record_failure("seed CF before failing DumpRegs should succeed");
+    failures += vm_cpu_clear_flag(&vm.cpu, VM_FLAG_ZF) ? 0 : record_failure("seed ZF before failing DumpRegs should succeed");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_SF) ? 0 : record_failure("seed SF before failing DumpRegs should succeed");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_OF) ? 0 : record_failure("seed OF bit before failing DumpRegs should succeed");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_ZF, "seed-invalid-zero", "seed", "seed.asm", 24U, 1U, 240U, 4U, "seed", 0U) ? 0 : record_failure("seed zero-valued ZF invalidity before failing DumpRegs should succeed");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 25U, 1U, 250U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity before failing DumpRegs should succeed");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 179U, 4U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "DumpRegs one-byte-short limits should configure");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED, "DumpRegs should fail with only 179 bytes available");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "", "DumpRegs one-byte-short failure should commit no candidate bytes");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 0U, "DumpRegs one-byte-short failure should commit no LF bytes");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &value) ? expect_u32(value, 0x89ABCDEFU, "DumpRegs byte-limit failure should preserve EAX") : record_failure("EAX read after failing DumpRegs should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &value) ? expect_u32(value, 0x11111111U, "DumpRegs byte-limit failure should preserve EBX") : record_failure("EBX read after failing DumpRegs should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ECX, &value) ? expect_u32(value, 0x22222222U, "DumpRegs byte-limit failure should preserve ECX") : record_failure("ECX read after failing DumpRegs should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &value) ? expect_u32(value, 0x33333333U, "DumpRegs byte-limit failure should preserve EDX") : record_failure("EDX read after failing DumpRegs should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESI, &value) ? expect_u32(value, 0x44444444U, "DumpRegs byte-limit failure should preserve ESI") : record_failure("ESI read after failing DumpRegs should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDI, &value) ? expect_u32(value, 0x55555555U, "DumpRegs byte-limit failure should preserve EDI") : record_failure("EDI read after failing DumpRegs should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBP, &value) ? expect_u32(value, 0x66666666U, "DumpRegs byte-limit failure should preserve EBP") : record_failure("EBP read after failing DumpRegs should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &value) ? expect_u32(value, 0x77777777U, "DumpRegs byte-limit failure should preserve ESP") : record_failure("ESP read after failing DumpRegs should succeed");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "DumpRegs byte-limit failure should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, false, "DumpRegs byte-limit failure should preserve deterministic zero ZF while validity is undefined");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "DumpRegs byte-limit failure should preserve SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "DumpRegs byte-limit failure should preserve deterministic OF while validity is undefined");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, true, NULL, NULL, 0U, "DumpRegs byte-limit failure should preserve valid CF metadata");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_ZF, false, "seed-invalid-zero", "seed", 24U, "DumpRegs byte-limit failure should preserve zero-valued ZF invalidity metadata");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_SF, true, NULL, NULL, 0U, "DumpRegs byte-limit failure should preserve valid SF metadata");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 25U, "DumpRegs byte-limit failure should preserve flag-validity metadata");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta->register_change_count, 0U, "DumpRegs byte-limit failure should report no register changes");
+    failures += expect_size(delta->flag_change_count, 0U, "DumpRegs byte-limit failure should report no flag changes");
+    failures += expect_size(delta->memory_change_count, 0U, "DumpRegs byte-limit failure should report no memory changes");
+    failures += expect_size(delta->memory_access_count, 0U, "DumpRegs byte-limit failure should report no memory accesses");
+    failures += vm_memory_read_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, &memory_value, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory sentinel read should succeed after failing DumpRegs");
+    failures += expect_u32((uint32_t)memory_value, 0x5AU, "DumpRegs byte-limit failure should preserve simulated memory bytes");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED) {
+        failures += record_failure("DumpRegs one-byte-short failure should record the shared output-limit diagnostic");
+    } else {
+        failures += expect_u32(diagnostic->instruction.source_line, 26U, "DumpRegs output-limit diagnostic should preserve the call line");
+        failures += expect_string(diagnostic->instruction.source_text, "call DumpRegs", "DumpRegs output-limit diagnostic should preserve the full call instruction text");
+    }
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for DumpRegs one-line-short test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "DumpRegs one-line-short program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0xA1A2A3A4U) ? 0 : record_failure("seed EAX before line-limit DumpRegs should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, 0xB1B2B3B4U) ? 0 : record_failure("seed ESP before line-limit DumpRegs should succeed");
+    failures += vm_memory_write_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, 0xC5U, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("seed memory sentinel before line-limit DumpRegs should succeed");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_CF) ? 0 : record_failure("seed CF before line-limit DumpRegs should succeed");
+    failures += vm_cpu_clear_flag(&vm.cpu, VM_FLAG_ZF) ? 0 : record_failure("seed ZF before line-limit DumpRegs should succeed");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_ZF, "seed-line-invalid-zero", "seed", "seed.asm", 27U, 1U, 270U, 4U, "seed", 0U) ? 0 : record_failure("seed zero-valued ZF invalidity before line-limit DumpRegs should succeed");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 180U, 3U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "DumpRegs one-line-short limits should configure");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED, "DumpRegs should fail with only three lines available");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "", "DumpRegs one-line-short failure should commit no candidate lines");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &value) ? expect_u32(value, 0xA1A2A3A4U, "DumpRegs line-limit failure should preserve EAX") : record_failure("EAX read after line-limit DumpRegs should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &value) ? expect_u32(value, 0xB1B2B3B4U, "DumpRegs line-limit failure should preserve ESP") : record_failure("ESP read after line-limit DumpRegs should succeed");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "DumpRegs line-limit failure should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, false, "DumpRegs line-limit failure should preserve deterministic zero ZF while validity is undefined");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, true, NULL, NULL, 0U, "DumpRegs line-limit failure should preserve valid CF metadata");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_ZF, false, "seed-line-invalid-zero", "seed", 27U, "DumpRegs line-limit failure should preserve ZF invalidity metadata");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta->register_change_count, 0U, "DumpRegs line-limit failure should report no register changes");
+    failures += expect_size(delta->flag_change_count, 0U, "DumpRegs line-limit failure should report no flag changes");
+    failures += expect_size(delta->memory_change_count, 0U, "DumpRegs line-limit failure should report no memory changes");
+    failures += expect_size(delta->memory_access_count, 0U, "DumpRegs line-limit failure should report no memory accesses");
+    failures += vm_memory_read_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, &memory_value, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory sentinel read should succeed after line-limit DumpRegs");
+    failures += expect_u32((uint32_t)memory_value, 0xC5U, "DumpRegs line-limit failure should preserve simulated memory bytes");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for DumpRegs prior-output atomicity test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "DumpRegs prior-output program should load");
+    failures += expect_status(vm_append_program_console_output(&vm, "P", 1U, NULL), VM_EXEC_STATUS_OK, "DumpRegs prior output should commit");
+    failures += expect_status(vm_console_configure_limits(&vm.program_console, 180U, 4U) == VM_CONSOLE_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "DumpRegs prior-output limits should configure");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CONSOLE_OUTPUT_LIMIT_EXCEEDED, "DumpRegs should fail atomically when prior output leaves insufficient byte capacity");
+    failures += expect_string(vm_console_text(vm_program_console(&vm)), "P", "DumpRegs failure should preserve previously committed Program Console output");
+    failures += expect_size(vm_console_line_count(vm_program_console(&vm)), 0U, "DumpRegs failure should preserve prior line count");
+    vm_deinit(&vm);
+
     return failures;
 }
 
@@ -7396,7 +7618,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Phase 93 Irvine32 WriteBin coverage.
+/// Runs all executor tests through Phase 94 Irvine32 DumpRegs coverage.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -7431,6 +7653,9 @@ int main(void) {
     failures += test_phase92_irvine32_writehex_output_limits_are_atomic();
     failures += test_phase93_irvine32_writebin_formats_and_preserves_state();
     failures += test_phase93_irvine32_writebin_output_limits_are_atomic();
+    failures += test_phase94_irvine32_dumpregs_formats_and_preserves_state();
+    failures += test_phase94_irvine32_dumpregs_undefined_zero_and_first_eip();
+    failures += test_phase94_irvine32_dumpregs_output_limits_are_atomic();
     failures += test_neg_register_memory_and_flags();
     failures += test_phase20_error_paths();
     failures += test_adc_register_carry_propagation();
@@ -7540,6 +7765,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 93 Irvine32 WriteBin coverage passed.");
+    puts("Executor tests through Phase 94 Irvine32 DumpRegs coverage passed.");
     return 0;
 }

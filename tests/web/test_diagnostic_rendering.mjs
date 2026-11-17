@@ -399,13 +399,13 @@ test("Phase 70A renders stale runtime artifact warning exactly", () => {
     {
       kind: "internal-simulator-error",
       code: "stale-wasm-artifact",
-      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 93 - Irvine32 WriteBin. Rebuild web/dist with the Emscripten build script."
+      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 94 - Irvine32 DumpRegs. Rebuild web/dist with the Emscripten build script."
     }
   ]);
 
   assert.equal(
     rendered,
-    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 93 - Irvine32 WriteBin. Rebuild web/dist with the Emscripten build script."
+    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 94 - Irvine32 DumpRegs. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -1767,7 +1767,7 @@ END main
     source: `INCLUDE Irvine32.inc
 .code
 main PROC
-    DumpRegs
+    DumpMem
 main ENDP
 END main
 `,
@@ -2615,7 +2615,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2658,7 +2658,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "5" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.instructionCount, 5);
   assert.equal(json.instructionLimit, 5);
   assert.equal(json.executedInstructionCount, 5);
@@ -2695,9 +2695,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2723,7 +2723,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -2750,7 +2750,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2775,7 +2775,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2799,7 +2799,7 @@ END loop
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2825,7 +2825,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
   assertNoMessageWithCode(json.simulatorMessages, "unsupported-option");
   assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
@@ -2842,7 +2842,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2869,7 +2869,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2896,7 +2896,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2923,7 +2923,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2955,7 +2955,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.attemptedNextInstructionIndex, null);
@@ -2986,8 +2986,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 93);
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phase, 94);
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -3032,8 +3032,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 93);
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phase, 94);
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assert.equal(json.instructionCount, 5);
   assert.equal(json.executedInstructionCount, 5);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -3059,7 +3059,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3083,7 +3083,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3107,7 +3107,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3132,7 +3132,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3156,7 +3156,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3180,7 +3180,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3205,9 +3205,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3233,9 +3233,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3261,9 +3261,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3288,9 +3288,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3316,7 +3316,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3341,7 +3341,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3365,7 +3365,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "expected-operand",
@@ -3582,7 +3582,7 @@ END main
   for (const item of cases) {
     const { json, rawJson, rendered } = runFixture(item.name, item.source);
     assertRunStatus(json, false, "parse-error");
-    assert.equal(json.phase, 93);
+    assert.equal(json.phase, 94);
     assertMessageEquals(json.simulatorMessages[0], item.expected);
     assertNoExecutionComplete(json.simulatorMessages);
     assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
@@ -3595,7 +3595,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 93);
+  assert.equal(duplicateResult.json.phase, 94);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -3754,11 +3754,11 @@ test("renders known Irvine32 routine diagnostic exactly", () => {
       line: 4,
       column: 5,
       byteOffset: 41,
-      spanLength: 8
+      spanLength: 7
     }
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-irvine32-routine line 4, column 5, byte offset 41, span length 8: Recognized Irvine32 routine, but executable behavior for this routine is deferred to the routine-specific Irvine32 phases.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-irvine32-routine line 4, column 5, byte offset 41, span length 7: Recognized Irvine32 routine, but executable behavior for this routine is deferred to the routine-specific Irvine32 phases.");
 });
 
 test("renders exit without Irvine32 include diagnostic exactly", () => {
@@ -4750,10 +4750,10 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
-  assert.equal(json.sourceRunOutputContract, "phase-93-irvine32-writebin-contract-v1");
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
+  assert.equal(json.sourceRunOutputContract, "phase-94-irvine32-dumpregs-contract-v1");
   assert.equal(json.programConsole.text, "0000000A");
   assert.equal(json.programConsole.byteCount, 8);
   assert.equal(json.programConsole.lineCount, 0);
@@ -4899,10 +4899,10 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
-  assert.equal(json.sourceRunOutputContract, "phase-93-irvine32-writebin-contract-v1");
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
+  assert.equal(json.sourceRunOutputContract, "phase-94-irvine32-dumpregs-contract-v1");
   assert.equal(json.programConsole.text, "00000000000000000000000000001010");
   assert.equal(json.programConsole.byteCount, 32);
   assert.equal(json.programConsole.lineCount, 0);
@@ -5033,6 +5033,271 @@ END main
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals(name, source, rawJson, rendered, `${STARTUP_STATE_NOTICE_RENDERED}\n\n[resource-limit-error] console-output-limit-exceeded line 5, column 5, byte offset 64, span length 13: Program Console output would exceed the configured byte or line limit. Execution stopped before appending partial output.`);
+});
+
+test("Phase 94 keeps successful DumpRegs text in Program Console only", () => {
+  const name = "phase94-dumpregs-success-program-console-only";
+  const source = `INCLUDE Irvine32.inc
+.code
+main PROC
+    mov eax, 12345678h
+    mov ebx, 9ABCDEF0h
+    mov ecx, 00000001h
+    mov edx, 0FFFFFFFFh
+    mov esi, 11111111h
+    mov edi, 22222222h
+    mov ebp, 33333333h
+    mov esp, 44444444h
+    cmp eax, eax
+    call DumpRegs
+    exit
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.phase, 94);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
+  assert.equal(json.sourceRunOutputContract, "phase-94-irvine32-dumpregs-contract-v1");
+  assert.equal(
+    json.programConsole.text,
+    "\n  EAX=12345678  EBX=9ABCDEF0  ECX=00000001  EDX=FFFFFFFF\n" +
+      "  ESI=11111111  EDI=22222222  EBP=33333333  ESP=44444444\n" +
+      "  EIP=00401024  EFL=00000040  CF=0  SF=0  ZF=1  OF=0  AF=X  PF=X\n"
+  );
+  assert.equal(json.programConsole.byteCount, 180);
+  assert.equal(json.programConsole.lineCount, 4);
+  assert.equal(json.programConsole.text.includes("\r"), false);
+  assert.equal(json.programConsole.text.endsWith("\n"), true);
+  assert.deepEqual(json.memoryChanges, []);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
+});
+
+test("Phase 94 renders DumpRegs CALL without Irvine32 include diagnostic exactly", () => {
+  const name = "phase94-dumpregs-call-without-include";
+  const source = `.code
+main PROC
+    call DumpRegs
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "missing-irvine32-include",
+      message: "CALL DumpRegs requires INCLUDE Irvine32.inc before DumpRegs can be used as a virtual Irvine32 routine.",
+      line: 3,
+      column: 10,
+      byteOffset: 25,
+      spanLength: 8
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] missing-irvine32-include line 3, column 10, byte offset 25, span length 8: CALL DumpRegs requires INCLUDE Irvine32.inc before DumpRegs can be used as a virtual Irvine32 routine.");
+});
+
+test("Phase 94 renders bare DumpRegs diagnostic exactly", () => {
+  const name = "phase94-bare-dumpregs";
+  const source = `INCLUDE Irvine32.inc
+.code
+main PROC
+    DumpRegs
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "invalid-irvine32-call-form",
+      message: "DumpRegs is a virtual Irvine32 routine and must be called with CALL DumpRegs.",
+      line: 4,
+      column: 5,
+      byteOffset: 41,
+      spanLength: 8
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-irvine32-call-form line 4, column 5, byte offset 41, span length 8: DumpRegs is a virtual Irvine32 routine and must be called with CALL DumpRegs.");
+});
+
+test("Phase 94 renders INVOKE DumpRegs deferred diagnostic exactly", () => {
+  const name = "phase94-invoke-dumpregs-deferred";
+  const source = `INCLUDE Irvine32.inc
+.code
+main PROC
+    INVOKE DumpRegs
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-irvine-invoke",
+      message: "INVOKE target names a recognized Irvine32 routine, but Irvine32 routine dispatch through INVOKE is deferred to a later phase.",
+      line: 4,
+      column: 12,
+      byteOffset: 48,
+      spanLength: 8
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-irvine-invoke line 4, column 12, byte offset 48, span length 8: INVOKE target names a recognized Irvine32 routine, but Irvine32 routine dispatch through INVOKE is deferred to a later phase.");
+});
+
+test("Phase 94 renders DumpRegs Program Console byte-limit diagnostic exactly", () => {
+  const name = "phase94-dumpregs-byte-limit";
+  const source = `INCLUDE Irvine32.inc
+.code
+main PROC
+    mov eax, 12345678h
+    mov ebx, 9ABCDEF0h
+    mov ecx, 00000001h
+    mov edx, 0FFFFFFFFh
+    mov esi, 11111111h
+    mov edi, 22222222h
+    mov ebp, 33333333h
+    mov esp, 44444444h
+    cmp eax, eax
+    call DumpRegs
+    exit
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_PROGRAM_CONSOLE_MAX_BYTES: "179",
+    MASM32_DIAGNOSTIC_PROGRAM_CONSOLE_MAX_LINES: "4"
+  });
+  assertRunStatus(json, false, "resource-limit-exceeded");
+  assert.equal(json.programConsole.text, "");
+  assert.equal(json.programConsole.byteCount, 0);
+  assert.equal(json.programConsole.lineCount, 0);
+  assert.equal(json.programConsole.maxBytes, 179);
+  assert.equal(json.programConsole.limitExceeded, true);
+  assert.equal(json.programConsole.limitKind, "byte");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-notice",
+      code: "startup-state-notice",
+      message: STARTUP_STATE_NOTICE_TEXT
+    },
+    {
+      kind: "resource-limit-error",
+      code: "console-output-limit-exceeded",
+      message: "Program Console output would exceed the configured byte or line limit. Execution stopped before appending partial output.",
+      line: 13,
+      column: 5,
+      byteOffset: 243,
+      spanLength: 13
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, `${STARTUP_STATE_NOTICE_RENDERED}\n\n[resource-limit-error] console-output-limit-exceeded line 13, column 5, byte offset 243, span length 13: Program Console output would exceed the configured byte or line limit. Execution stopped before appending partial output.`);
+});
+
+test("Phase 94 renders DumpRegs Program Console line-limit diagnostic exactly", () => {
+  const name = "phase94-dumpregs-line-limit";
+  const source = `INCLUDE Irvine32.inc
+.code
+main PROC
+    mov eax, 12345678h
+    mov ebx, 9ABCDEF0h
+    mov ecx, 00000001h
+    mov edx, 0FFFFFFFFh
+    mov esi, 11111111h
+    mov edi, 22222222h
+    mov ebp, 33333333h
+    mov esp, 44444444h
+    cmp eax, eax
+    call DumpRegs
+    exit
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_PROGRAM_CONSOLE_MAX_BYTES: "180",
+    MASM32_DIAGNOSTIC_PROGRAM_CONSOLE_MAX_LINES: "3"
+  });
+  assertRunStatus(json, false, "resource-limit-exceeded");
+  assert.equal(json.programConsole.text, "");
+  assert.equal(json.programConsole.byteCount, 0);
+  assert.equal(json.programConsole.lineCount, 0);
+  assert.equal(json.programConsole.maxLines, 3);
+  assert.equal(json.programConsole.limitExceeded, true);
+  assert.equal(json.programConsole.limitKind, "line");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-notice",
+      code: "startup-state-notice",
+      message: STARTUP_STATE_NOTICE_TEXT
+    },
+    {
+      kind: "resource-limit-error",
+      code: "console-output-limit-exceeded",
+      message: "Program Console output would exceed the configured byte or line limit. Execution stopped before appending partial output.",
+      line: 13,
+      column: 5,
+      byteOffset: 243,
+      spanLength: 13
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, `${STARTUP_STATE_NOTICE_RENDERED}\n\n[resource-limit-error] console-output-limit-exceeded line 13, column 5, byte offset 243, span length 13: Program Console output would exceed the configured byte or line limit. Execution stopped before appending partial output.`);
+});
+
+test("Phase 94 rendered DumpRegs output-limit failure preserves prior Program Console text", () => {
+  const name = "phase94-dumpregs-limit-preserves-prior-program-console";
+  const source = `INCLUDE Irvine32.inc
+.code
+main PROC
+    mov al, 'P'
+    call WriteChar
+    call DumpRegs
+    exit
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_PROGRAM_CONSOLE_MAX_BYTES: "180",
+    MASM32_DIAGNOSTIC_PROGRAM_CONSOLE_MAX_LINES: "4"
+  });
+  assertRunStatus(json, false, "resource-limit-exceeded");
+  assert.equal(json.programConsole.text, "P");
+  assert.equal(json.programConsole.byteCount, 1);
+  assert.equal(json.programConsole.lineCount, 0);
+  assert.equal(json.programConsole.limitExceeded, true);
+  assert.equal(json.programConsole.limitKind, "byte");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-notice",
+      code: "startup-state-notice",
+      message: STARTUP_STATE_NOTICE_TEXT
+    },
+    {
+      kind: "resource-limit-error",
+      code: "console-output-limit-exceeded",
+      message: "Program Console output would exceed the configured byte or line limit. Execution stopped before appending partial output.",
+      line: 6,
+      column: 5,
+      byteOffset: 76,
+      spanLength: 13
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, `${STARTUP_STATE_NOTICE_RENDERED}\n\n[resource-limit-error] console-output-limit-exceeded line 6, column 5, byte offset 76, span length 13: Program Console output would exceed the configured byte or line limit. Execution stopped before appending partial output.`);
 });
 
 test("Phase 89 renders WriteString invalid-memory-read diagnostic exactly", () => {
@@ -5266,7 +5531,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -5287,7 +5552,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -6725,9 +6990,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -6787,9 +7052,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -6847,9 +7112,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "error"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -6884,9 +7149,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assert.equal(json.instructionCount, 2);
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.currentInstructionIndex, 1);
@@ -6935,9 +7200,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assert.equal(json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
@@ -6976,9 +7241,9 @@ END main
 
   const defaultResult = runFixture("phase71fExitTerminatesBeforeFallthroughDefault", source);
   assertRunStatus(defaultResult.json, true, "ok");
-  assert.equal(defaultResult.json.phase, 93);
+  assert.equal(defaultResult.json.phase, 94);
   assert.equal(defaultResult.json.phaseSuffix, "");
-  assert.equal(defaultResult.json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(defaultResult.json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assert.equal(defaultResult.json.entryProcedureEndMode, "code-stream");
   assert.equal(defaultResult.json.instructionCount, 2);
   assert.equal(defaultResult.json.executedInstructionCount, 2);
@@ -6998,9 +7263,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(stopResult.json, true, "ok");
-  assert.equal(stopResult.json.phase, 93);
+  assert.equal(stopResult.json.phase, 94);
   assert.equal(stopResult.json.phaseSuffix, "");
-  assert.equal(stopResult.json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(stopResult.json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assert.equal(stopResult.json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(stopResult.json.instructionCount, 2);
   assert.equal(stopResult.json.executedInstructionCount, 2);
@@ -7040,7 +7305,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "1" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.callDepthLimit, 1);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -7076,7 +7341,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "0" });
   assertRunStatus(json, false, "invalid-argument");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.callDepthLimit, 0);
   assert.deepEqual(json.memoryChanges, []);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -7103,9 +7368,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -7137,9 +7402,9 @@ END front
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -7227,9 +7492,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -7485,8 +7750,8 @@ END main
     MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "allocated-object-strict"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 93);
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phase, 94);
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assert.equal(json.instructionCount, 0);
   assert.deepEqual(json.memoryChanges, []);
   assert.deepEqual(json.simulatorMessages, [
@@ -7517,8 +7782,8 @@ END main
     MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 93);
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phase, 94);
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assert.equal(json.registers.EAX.hex, "00000000h");
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -7567,8 +7832,8 @@ END Other
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
-  assert.equal(json.phaseName, "Phase 93 - Irvine32 WriteBin");
+  assert.equal(json.phase, 94);
+  assert.equal(json.phaseName, "Phase 94 - Irvine32 DumpRegs");
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "assembly-error",
@@ -8330,7 +8595,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -8558,7 +8823,7 @@ END MyProc
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -8583,7 +8848,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -8607,7 +8872,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -8637,7 +8902,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -8672,7 +8937,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -8773,7 +9038,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.registers.ESP.hex, "00000000h");
   assert.equal(json.registers.EAX.hex, "00000000h");
@@ -9576,7 +9841,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 93);
+  assert.equal(json.phase, 94);
   assert.equal(json.memoryChanges.length, 0, rawJson);
   assert.deepEqual(json.simulatorMessages, [
     {
